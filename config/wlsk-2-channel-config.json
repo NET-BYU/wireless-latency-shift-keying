@@ -1,0 +1,41 @@
+{
+    "version": "1.0",
+    "rx_params": {
+        "rx_interface":"enp7s0f4u1",
+        "rx_ping_interval": 0.005,
+        "rx_num_pings": 8500,
+        "rx_num_channels": 2,
+        "rx_target_ips": [  "wlsk-pt-node.local",
+                            "wlsk-pt-node-1.local",
+                            "wlsk-pt-node-2.local",
+                            "wlsk-pt-node-3.local"],
+        "rx_src_addrs": [   "DE:AD:BE:EF:DE:AD",
+                            "DE:AD:BE:EF:DE:A1",
+                            "DE:AD:BE:EF:DE:A2",
+                            "DE:AD:BE:EF:DE:A3"],
+        "collect_channel_utilization": false,
+        "channel_util_if": "wlp7s0f4u2u4mon",
+        "channel_util_time": 45,
+        "channeL_util_ssid": "TP-Link_13FA",
+        "rx_sample_with_pings": false
+    },
+    "tx_params": {
+        "use_serial": true,
+        "serial_port_names": [  "/dev/ttyUSB0",
+                                "/dev/ttyUSB1"],
+        "mqtt_tx_channel_names": "TBD",
+        "bit_sequences": [[1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1],
+                            [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0],
+                            [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0],
+                            [1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1],
+                            [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+                            [1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1],
+                            [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0],
+                            [1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0],
+                            [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1],
+                            [1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0]]
+    },
+    "test_params": {
+        "num_test_iterations": 1
+    }
+}

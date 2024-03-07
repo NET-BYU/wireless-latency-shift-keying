@@ -1,0 +1,10 @@
+
+wlsk-tx/aircrack-ng/
+build
+.vscode
+.idea
+tests/
+wlsk-rx/test/
+
+venv/
+*.DS_Store

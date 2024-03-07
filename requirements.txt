@@ -1,0 +1,7 @@
+numpy
+scipy
+matplotlib 
+pyserial
+scapy
+paho-mqtt
+pandas

@@ -1,17 +1,17 @@
 {
     "version": "1.0",
     "rx_params": {
-        "rx_interface":"enp7s0f4u1",
+        "rx_interface":"enp0s3",
         "rx_ping_interval": 0.005,
         "rx_num_pings": 8500,
         "rx_num_channels": 1,
         "rx_target_ips": [  "wlsk-pt-node.local" ],
         "rx_src_addrs": [   "DE:AD:BE:EF:DE:AD" ],
-        "collect_channel_utilization": true,
+        "collect_channel_utilization": false,
         "channel_util_if": "wlp7s0f4u2u4mon",
         "channel_util_time": 45,
         "channeL_util_ssid": "TP-Link_13FA",
-        "rx_sample_with_pings": true
+        "rx_sample_with_pings": false
     },
     "tx_params": {
         "use_serial": true,

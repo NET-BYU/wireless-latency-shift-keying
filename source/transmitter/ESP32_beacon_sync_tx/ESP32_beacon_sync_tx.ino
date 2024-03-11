@@ -21,7 +21,7 @@ typedef struct
   bool start = false;
 } wlskStateHandle_t;
 
-uint8_t channel = 11;
+uint8_t channel = 4;
 hw_timer_t *timeoutTimer = NULL;
 bool timeout = false;
 uint32_t timeoutCount = 0;

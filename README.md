@@ -17,7 +17,7 @@ The Wireless router should be set up to have separate 2.4 and 5 GHz SSIDs, as sh
   
 ![Router Configuration](doc/figures/router.png)
 
-Note that the SSID "WSLK-NET-2G" is used since several parts of the code assume that SSID for convenience. If a different network SSID is used, changes will need to be made to the code prior to running, as described below. 
+Note that the SSID "WLSK-NET-2G" is used since several parts of the code assume that SSID for convenience. If a different network SSID is used, changes will need to be made to the code prior to running, as described below. 
 
 Once the network is set up, the test machine should be connected via Ethernet to the wireless router. 
 
@@ -30,7 +30,7 @@ Prior to flashing the SD card with Raspberry Pi OS, select the "Customize OS" op
 
 ![Raspberry Pi Configuration](doc/figures/raspi_2.PNG)
 
-If this is done correctly, the Pi will automatically connect to the 2.4 GHz WiFi network and advertise its hostname upon booting. You should be able to ping it by its hostname to verify that everything is working correctly: 
+If this is done correctly, the Pi will automatically connect to the 2.4 GHz WiFi network and advertise its hostname upon booting. You should be able to ping it by its hostname/IP address (found in the DHCP list of your router) to verify that everything is working correctly: 
 
 ```shell
 $ ping wlsk-pt-node.local
@@ -68,7 +68,7 @@ If a WiFi SSID that was not `WLSK-NET-2G` was used, then update the SSID field i
 if (!(strcmp(ssid, "WLSK-NET-2G")))
 ```
 
-To recompile and flash the ESP32 development board, first connect it to the PC via USB cable and identify the serial port. Specify the Development board type and serial port then use the `Arduino: Upload Using Programmer` command from the VS code menu, as shown below: 
+To recompile and flash the ESP32 development board, first connect it to the PC via USB cable and identify the serial port. Specify the Development board type, serial port, and programmer, and then use the `Arduino: Upload Using Programmer` command from the VS code menu, as shown below: 
 
 ![Arduino Upload to ESP32](doc/figures/arduino_3.png)
 
@@ -78,15 +78,15 @@ To recompile and flash the ESP32 development board, first connect it to the PC v
 
 
 ### Test machine setup 
-To prep the test machine to run the test, two steps are needed. First, install the virtual environment and install the python dependencies with 
+To prep the test machine to run the test, two steps are needed. First, ensure your Linux PC/VM has an internet connection and then install the virtual environment and install the python dependencies with 
 
 ```shell
 source setup_python_env.sh`
 ```
 
-Next, update the desired configuration file. The following values are required to be customized to the test machine / setup:
+Next, update the desired configuration file in `config/wlsk-1-channel-config.json`. The following values are required to be customized to the test machine / setup:
 - `rx_params.rx_interface` - This should be set to the interface name of the Ethernet adapter of the test machine that is connected to the wirelss router. (Can be obtained with the `ifconfig` command)
-- `rx_params.r_target_ips` - This should be set to the network hostname (or IP address) of the raspberry pi ping target
+- `rx_params.rx_target_ips` - This should be set to the network hostname (or IP address) of the raspberry pi ping target
 - `tx_params.serial_port_names` - This should be set to the serial port that the ESP32 is connected to
 
 ## Running a Test 

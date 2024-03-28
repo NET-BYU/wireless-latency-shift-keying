@@ -89,6 +89,8 @@ Next, update the desired configuration file in `config/wlsk-1-channel-config.jso
 - `rx_params.rx_target_ips` - This should be set to the network hostname (or IP address) of the raspberry pi ping target
 - `tx_params.serial_port_names` - This should be set to the serial port that the ESP32 is connected to
 
+> Optionally, the `rx_params.channel_util*` parameters can be set. If `collect_channel_utilization` is set to `true`, then the test script will look for a wireless adapter on the interface specified. It will capture beacon frames sent by the AP SSID specified by `rx_params.channeL_util_ssid`, and extract the channel utilization reported by the AP. This AP should be selected such that it is on the same 2.4 GHz channel as the test AP, and should be configured to report channel utilization, if the router supports it. 
+
 ## Running a Test 
 
 To run a test, first create a test directory `mkdir ./tests`

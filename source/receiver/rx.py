@@ -14,6 +14,7 @@ from sample_util import WlskChanUtilSampler
 import socket
 import subprocess
 import paho.mqtt.client as mqtt
+import math
 
 
 def on_message(client, userdata, msg):
@@ -30,7 +31,6 @@ def on_message(client, userdata, msg):
                 test_iter_remote_rssi.append(int(rssi))
     except Exception as e: pass
         # print("Error decoding message from MQTT: {}".format(e))
-
 
 # Connect to the MQTT broker
 def connect_mqtt_broker():
@@ -49,7 +49,6 @@ def connect_mqtt_broker():
         sys.exit()
 
     return client
-
 
 class RawWlskPingPacket:
     """
@@ -95,6 +94,7 @@ class WlskReceiver:
         self.interface = "enp5s0"
         self.interval = 0.005
         self.num_pings = 100
+        self.timeout = 30
         self.sniff_time_sec = self.num_pings * self.interval * 1.2 + 1
         self.target_ips = ["wlsk-pt-node.local"]
         self.src_addrs = ["DE:AD:BE:EF:DE:AD"]
@@ -136,6 +136,7 @@ class WlskReceiver:
             self.interface = rx_params["rx_interface"]
             self.interval = rx_params["rx_ping_interval"]
             self.num_pings = rx_params["rx_num_pings"]
+            self.timeout = rx_params["rx_timeout_limit"]
             self.sniff_time_sec = self.num_pings * self.interval * 1.2 + 1
             self.num_channels = rx_params["rx_num_channels"]
             self.target_ips = rx_params["rx_target_ips"]
@@ -164,7 +165,7 @@ class WlskReceiver:
         if not self.initialized:
             print("Init before running RX!")
             return
-        print("Starting receiver for ")
+        # print("Starting receiver for ")
         # Clear out the RX data from previous tests
         self.rx_data = []
         self.rx_q = Queue()
@@ -210,9 +211,7 @@ class WlskReceiver:
         print("Closed Processes")
         # for process in self.ping_processes:
         #     process.terminate()
-        #     print("Closed ping process {}".format(process))
-
-    
+        #     print("Closed ping process {}".format(process)) 
 
     def save_rx_data(self):
 
@@ -363,6 +362,7 @@ class WlskReceiver:
 
         # Convert hostnames into IP addresses
         for idx, val in enumerate(self.target_ips):
+            print(f"target-ip: {val}")
             ip = socket.gethostbyname(val)
             self.target_ips[idx] = ip
             print("Resolving {} to {}".format(val, ip))
@@ -410,23 +410,38 @@ class WlskReceiver:
         util_rate = chann_util_sampler.measure_util_rate(self.channel_util_sample_time, self.channel_util_sample_ssid)
         self.util_q.put(util_rate)
 
+def create_test_file():
+    name = input("Give the test a filename (no suffix) [Enter to finish]:\n")
+    comment = input("Leave a note for the conditions of the test [Enter to finish]:\n")
+    print("----------------------\n")
+    with open(f"./test/files.log","a") as file:
+        file.write(f"{name} : {comment}\n")
+    return name
+
 if __name__ == "__main__":
     """
         Main routine - to be used for unit testing this module
     """
+    start_time = time.time()
     test_iter_remote_rssi = []
     # Initialize the receiver using the config file and output directory 
     # For test in test iterations, run the receiver. 
-    if len(sys.argv) < 3:
+    
+    input("-----BEGIN TESTING-----")
+    time.sleep(1)
+    
+    testfilename = create_test_file()
+    
+    if len(sys.argv) < 2:
         print("Usage: sudo python3 rx.py <output_dir> <config_path>")
         sys.exit(1)
-    else:
-        print("Starting Receiver..\nOutput directory: {}\n \
-              Config Directory: {}".format(sys.argv[1], sys.argv[2]))
     
-    output_dir = sys.argv[1]
-    config_path = sys.argv[2]
-
+    # output_dir = sys.argv[1]
+    output_dir = f"./tdumps/{testfilename}"
+    config_path = sys.argv[1]
+    print("Starting Receiver..\nOutput directory:\t{}\nConfig Directory:\t{}".format(output_dir,config_path))
+    time.sleep(1)
+    
     rx = WlskReceiver(output_dir=output_dir, config_path=config_path)
     if not rx.initialized:
         print("Error Initializing receiver! Quitting Application..")
@@ -461,8 +476,12 @@ if __name__ == "__main__":
     decoder_utils = WlskDecoderUtils()
     decoder = WlskDecoder()
 
-
+    
     for i in range(num_test_iterations):
+        sub_time = time.time()
+        custom_txt = open(f"./test/{testfilename}.txt","a")
+        print(f"iteration {i}")
+        
         test_iter_remote_rssi= []
         # Start Receiver
         rx.receive("test_iter_{}".format(i))
@@ -489,15 +508,16 @@ if __name__ == "__main__":
         rx_data = rx.save_rx_data()
 
         expected_data = tx_params["bit_sequences"][i]
-        
         # Decode the received data 
         for channel, channel_rx_data in enumerate(rx_data):
+            # print(f"CHANNEL: {channel}, RX: {channel_rx_data}")
             return_time_stamps_array = np.array(channel_rx_data[1])
             toa_dist, toa_dist_times = decoder_utils.toa_distribution(return_time_stamps_array)
             decode_output_dir = os.path.join(output_dir, "test_iter_{}".format(i))
             decoded_bits = decoder.decode_single_test(toa_dist, decode_output_dir, channel, True)
-            print("Decoded: {}".format(decoded_bits))
-            print("Expected: {}".format(expected_data))
+            print("Decoded:\t{}".format(decoded_bits))
+            print("Expected:\t{}".format(expected_data))
+            custom_txt.write("Decoded:\t{}\nExpected:\t{}\n".format(decoded_bits,expected_data))
 
             # Calculate BER
             if decoded_bits is not None:
@@ -508,11 +528,11 @@ if __name__ == "__main__":
                 ber = 1 - (correct / len(decoded_bits))
             else:
                 ber = 1.0
-            print("BER of test_iter_{} channel {} is {}\n".format(i, channel, ber))
+            print("BER of iteration{} is {}\n".format(i, ber))
             # save BER as file 
             ber_file = os.path.join(decode_output_dir, "{}.txt".format(channel))
             output = subprocess.check_output('echo {} > {}'.format(ber, ber_file), shell=True)
-            print(output)
+            # print(output)
 
             if not tx_params["use_serial"]:
                 # Save Remote RSSI array
@@ -521,12 +541,18 @@ if __name__ == "__main__":
                 print("Average is {}".format(rssi_average))
                 rssi_file = os.path.join(decode_output_dir, "tx_rssi.txt")
                 output = subprocess.check_output('echo {} > {}'.format(rssi_average, rssi_file), shell=True)
-                print(output)              
+                # print(output)              
         
         # Copy config into temp directory
         tmp_config_path = os.path.join(output_dir, "config.json")
         subprocess.check_output('cp {} {}'.format(config_path, tmp_config_path), shell=True)  
-            
+        custom_txt.close()
+        round_time = time.time()
+        print(f"Iteration {i} Time: {round_time-sub_time} secs\n-------------")
+    end_time = time.time()
+    
+    elapsed_time = end_time - start_time
+    print(f"-----------------------\nTotal time elapsed: {math.floor(elapsed_time/60)} min {elapsed_time % 60} sec ")
 
 
 

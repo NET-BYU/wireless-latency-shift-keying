@@ -8,3 +8,12 @@ wlsk-rx/test/
 
 venv/
 *.DS_Store
+
+# files I created as tests during experiments, etc.
+source/receiver/__pycache__/
+t-misc/
+tdumps/
+test/
+sus.txt
+zeroes.txt
+wlsk_rec.log

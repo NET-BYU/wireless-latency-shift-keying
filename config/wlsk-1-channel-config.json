@@ -1,11 +1,11 @@
 {
     "version": "1.0",
     "rx_params": {
-        "rx_interface":"enp0s3",
+        "rx_interface":"eno1",
         "rx_ping_interval": 0.005,
         "rx_num_pings": 8500,
         "rx_num_channels": 1,
-        "rx_target_ips": [  "wlsk-pt-node.local" ],
+        "rx_target_ips": [  "192.168.0.156" ],
         "rx_src_addrs": [   "DE:AD:BE:EF:DE:AD" ],
         "collect_channel_utilization": false,
         "channel_util_if": "wlp7s0f4u2u4mon",
@@ -29,6 +29,6 @@
                             [1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0]]
     },
     "test_params": {
-        "num_test_iterations": 1
+        "num_test_iterations": 3
     }
 }

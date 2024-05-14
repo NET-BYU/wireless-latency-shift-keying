@@ -83,7 +83,7 @@ class WlskDecoderUtils:
         return pd.Series(toa_dist), toa_dist_times
     
     def correlate(self, raw_data, code,window_size):
-        var_data = raw_data.rolling(window=window_size).var().fillna(method='bfill')
+        var_data = raw_data.rolling(window=window_size).var().bfill()
         # print(var_data)
         code_upscaled = []
         # Define an upscaled one 
@@ -312,7 +312,7 @@ class WlskDecoder:
             adjustment = point_to_evaluate-timed_xcorr_bit_windows[index]
             if index==0:
             # if index == 0 or abs(adjustment) > 50:
-                print(index, adjustment, timed_xcorr_bit_windows[index])
+                # print(index, adjustment, timed_xcorr_bit_windows[index])
                 timed_xcorr_bit_windows[index] += adjustment
                 for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
                     timed_xcorr_bit_windows[adjust_index] += int(adjustment/((i+2)**2))
@@ -325,7 +325,7 @@ class WlskDecoder:
 
             bit_x_vals.append(point_to_evaluate)
         
-        print("Eval X coordinates: {}".format(bit_x_vals))
+        print("Eval X coordinates: {}\n".format(bit_x_vals))
         # Generate Plot showing raw data
         if save_plot:
             self.utils.plot_dist_sync_barker(toa_dist, xcorr_sync, xcorr_barker, test_dir, test_num, bit_x_vals, timed_xcorr_bit_windows,ones,zeroes, False)

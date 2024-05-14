@@ -1,4 +1,5 @@
-from sample_util import WlskChanUtilSampler
+from decoder_v2 import WlskDecoder
+from source.receiver.sample_util import WlskChanUtilSampler
 from multiprocessing import Process, Queue
 from wlsk_packet import RawWlskPingPacket
 from scapy.all import Ether, IP, TCP
@@ -16,6 +17,8 @@ class WlskReceiver:
     """
         I dunno what it does yet. Don't bug me about it.
     """
+    decoder = WlskDecoder() # for utils, use self.decoder.utils
+    
     def __init__(self, config_path, log_dest=None,log_level=l.DEBUG):
         # Logging info
         self.l = l.getLogger(__name__)
@@ -323,7 +326,7 @@ class WlskReceiver:
                     # Create an ICMP Echo Request packet with custom payload
                     target_ip = self.target_ips[c]
                     src_addr = self.src_addrs[c]
-                    packet = Ether(src=src_addr)/IP(dst=target_ip)/ICMP()/("wlsk_" + str(c) + "_" + str(i))
+                    packet = Ether(src=src_addr)/IP(dst=target_ip)/ICMP()/("wlsk_" + str(c) + "_" + str(i)) # type: ignore
                     packets.append(packet)
             sendp(packets, iface=self.interface, inter=self.interval/self.num_channels)
             print("Done sending")

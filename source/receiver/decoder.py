@@ -160,20 +160,10 @@ class WlskDecoderUtils:
         plt.savefig(os.path.join(test_dir, "{}.png".format(test_num)),dpi=600)
 
 class WlskDecoder:
-    RAND_BIT_SEQ = [[1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1],
-                [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0],
-                [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0],
-                [1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1],
-                [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0],
-                [1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1],
-                [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0],
-                [1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0],
-                [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1],
-                [1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0]]
-    
+       
     NUM_BITS_TO_DECODE = 32
     BIT_WINDOW_CHIPS = 2
-    BARKER_LENGH = int(11 * 102)
+    BARKER_LENGTH = int(11 * 102)
     SYNC_WORD_LENGTH = int(31 * 102)
 
     def __init__(self):
@@ -237,7 +227,7 @@ class WlskDecoder:
         timed_xcorr_bit_windows = []
         ori_bit_windows = []
         for bit in range(1, self.NUM_BITS_TO_DECODE+1):
-            xval = sync_start + self.BARKER_LENGH * bit+5*bit
+            xval = sync_start + self.BARKER_LENGTH * bit+5*bit
             if xval < len(xcorr_barker):
                 timed_xcorr_bit_windows.append(xval)
                 ori_bit_windows.append(xval)

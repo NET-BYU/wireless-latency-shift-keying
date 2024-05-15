@@ -375,7 +375,7 @@ class WlskReceiver:
                     # Create an ICMP Echo Request packet with custom payload
                     target_ip = self.target_ips[c]
                     src_addr = self.src_addrs[c]
-                    packet = Ether(src=src_addr)/IP(dst=target_ip)/ICMP()/("wlsk_" + str(c) + "_" + str(i))
+                    packet = Ether(src=src_addr)/IP(dst=target_ip)/ICMP()/("wlsk_" + str(c) + "_" + str(i)) # type: ignore
                     packets.append(packet)
             sendp(packets, iface=self.interface, inter=self.interval/self.num_channels)
             print("Done sending")

@@ -1,5 +1,5 @@
 {
-    "version": "1.1",
+    "version": 2.0,
     "rx_params": {
         "rx_interface":"eno1",
         "rx_ping_interval": 0.005,
@@ -12,10 +12,17 @@
         "target_ips": [  "192.168.0.156" ],
         "src_addrs": [   "DE:AD:BE:EF:DE:AD" ]
     },
+    "messages": {
+        "sync_word": [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0],
+        "barker_code": [1,1,1,-1,-1,-1,1,-1,-1,1,-1],
+        "packet_length": 32,
+        "max_packets": 1000
+    },
     "utilities": {
         "collect_channel_utilization": false,
         "channel_util_if": "wlp7s0f4u2u4mon",
         "channel_util_time": 45,
-        "channeL_util_ssid": "TP-Link_13FA"
+        "channeL_util_ssid": "TP-Link_13FA",
+        "use_decode_utilities": false
     }
 }

@@ -4,15 +4,16 @@ import numpy as np
 
 
 class WlskDecoder:
-       
-    NUM_BITS_TO_DECODE = 32
-    BIT_WINDOW_CHIPS = 2
-    BARKER_LENGTH = int(11 * 102)
-    SYNC_WORD_LENGTH = int(31 * 102)
-
-    def __init__(self):
+    
+    def __init__(self,sync_word,barker_code,packet_len):
         self.utils = WlskDecoderUtils()
+        self.SYNC_WORD = sync_word
+        self.SYNC_WORD_LENGTH = int(len(self.SYNC_WORD) * 102)
+        self.BARKER_CODE = barker_code
+        self.BARKER_LENGTH = int(len(self.SYNC_WORD) * 11)
+        self.PACKET_LENGTH = packet_len
         self.initialized = True
+        return
 
     def decode_single_test(self, toa_dist, test_dir = None, test_num = 0, save_plot = False):
         toa_dist = toa_dist[0:]
@@ -24,15 +25,14 @@ class WlskDecoder:
         #     x += 102.4
 
         # find the sync word in the raw data 
-        sync_word = [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0]
-        xcorr_sync = self.utils.correlate(raw_data=toa_dist, code=sync_word,window_size=75)
+        xcorr_sync = self.utils.correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
 
         # Generate Cross Corelation of Barker Codes with the Received Chips 
         barker_code = [1,1,1,-1,-1,-1,1,-1,-1,1,-1]
         xcorr_barker = self.utils.correlate(raw_data=toa_dist, code=barker_code,window_size=75)
 
         # Find the first peak of sync word xcorr - this should be the sync word
-        cutoff = 10000 #len(toa_dist) - self.SYNC_WORD_LENGTH - self.NUM_BITS_TO_DECODE * self.BARKER_LENGH
+        cutoff = 10000 #len(toa_dist) - self.SYNC_WORD_LENGTH - self.PACKET_LEGNTH * self.BARKER_LENGH
         ones_sync, _ = find_peaks(xcorr_sync, height = 1500)
         sync_indices = np.where(xcorr_sync[:cutoff] > xcorr_sync.std()*2)[0]
         # sync_indices = []
@@ -70,7 +70,7 @@ class WlskDecoder:
         # Calculate Bit Decision X-values based on the sync word location.
         timed_xcorr_bit_windows = []
         ori_bit_windows = []
-        for bit in range(1, self.NUM_BITS_TO_DECODE+1):
+        for bit in range(1, self.PACKET_LENGTH+1):
             xval = sync_start + self.BARKER_LENGTH * bit+5*bit
             if xval < len(xcorr_barker):
                 timed_xcorr_bit_windows.append(xval)

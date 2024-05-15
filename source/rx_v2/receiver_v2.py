@@ -1,4 +1,6 @@
 from decoder_v2 import WlskDecoder
+import sys
+sys.path.append("../..")
 from source.receiver.sample_util import WlskChanUtilSampler
 from multiprocessing import Process, Queue
 from wlsk_packet import RawWlskPingPacket
@@ -17,7 +19,7 @@ class WlskReceiver:
     """
         I dunno what it does yet. Don't bug me about it.
     """
-    decoder = WlskDecoder() # for utils, use self.decoder.utils
+    VERSION = 2.0
     
     def __init__(self, config_path, log_dest=None,log_level=l.DEBUG):
         # Logging info
@@ -51,7 +53,12 @@ class WlskReceiver:
         self.channel_util_sample_time = 45
         self.channel_util_sample_ssid = "TP-Link_13FA"
         self.util_rate = None
-        
+        self.sync_word = [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0]
+        self.barker_code = [1,1,1,-1,-1,-1,1,-1,-1,1,-1]
+        self.packet_length = 32
+        self.max_packets = 1000
+        self.decoder = None
+                
         # Runtime variables
         self.rx_q = None
         self.util_q = None
@@ -76,8 +83,13 @@ class WlskReceiver:
             # Read JSON file 
             with open(config_path, 'r') as file:
                 config_data = json.load(file)
+                version = config_data["version"]
+                if version != 2.0:
+                    self.l.error(f"Using the wrong version of config file. Expected v{self.VERSION}, got v{version}")
+                    return
                 rx_params = config_data["rx_params"]
                 reflectors = config_data["reflectors"]
+                message = config_data["messages"]
                 utilities = config_data["utilities"]
                 # RX Parameters
                 self.interface = rx_params["rx_interface"]
@@ -89,11 +101,22 @@ class WlskReceiver:
                 self.num_receivers = reflectors["num_receivers"]
                 self.target_ips = reflectors["target_ips"]
                 self.src_addrs = reflectors["src_addrs"]
+                # Message Parameters (for the decoder)
+                self.sync_word = message["sync_word"]
+                self.barker_code = message["barker_code"]
+                self.packet_length = message["packet_length"]
+                self.max_packets = message["max_packets"]
                 # Utility Parameters
                 self.collect_channel_util = utilities["collect_channel_utilization"]
                 self.channel_util_if = utilities["channel_util_if"]
                 self.channel_util_sample_ssid = utilities["channeL_util_ssid"]
                 self.channel_util_sample_time = utilities["channel_util_time"]
+                
+            self.l.debug("WLSK sync ({} bit): {}".format(len(self.sync_word),self.sync_word))
+            self.l.debug("WLSk barker ({} bit): {}".format(len(self.barker_code),self.barker_code))
+            self.decoder = WlskDecoder(self.sync_word,self.barker_code,self.packet_length)  
+            self.l.debug("WLSK decoder finished setup.")
+              
             self.initialized = True
         except Exception as e:
             self.l.error("Error initializilng WLSK RX! {}".format(e))

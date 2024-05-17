@@ -1,5 +1,4 @@
 import multiprocessing
-from wlsk_packet import RawWlskPingPacket
 from scapy.all import Ether, IP, TCP, Dot11
 import matplotlib.pyplot as plt
 from scapy.all import *

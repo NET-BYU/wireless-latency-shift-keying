@@ -3,7 +3,6 @@ import sys
 sys.path.append("../..")
 from source.receiver.sample_util import WlskChanUtilSampler
 from multiprocessing import Process, Queue
-from wlsk_packet import RawWlskPingPacket
 from scapy.all import Ether, IP, TCP
 import matplotlib.pyplot as plt
 from scapy.all import *

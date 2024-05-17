@@ -11,67 +11,88 @@ import socket
 import json
 import os
 
-def send_packets(pipes):
+# NUM BEACON SNIFFS
+BEACON_SNIFFS = 30 
+# TARGET_IPs:
+RPI_NODE = '192.168.0.125'
+G_HOME = '192.168.86.98'
+# SOURCE ADDRESS:
+SRC = 'DE:AD:BE:EF:DE:AD'
+# MAC ADDRESSES:
+SHERI_AND_KUZ = '9c:4f:5f:08:27:7e'   #   Sheri and kuz (neighbor @ home)
+BYU_IOT_EB = '60:26:ef:b2:28:a2'      #   BYU-IOT-EB
+# INTERFACES:
+LC_ETH = 'eno1'                       #   lab computer ethernet
+LC_WIFI = 'wlp1s0mon'                 #   lab computer wifi
+PC_ETH = 'enx98fc84e63579'            #   laptop ethernet dongle 
+PC_WIFI = 'wlp2s0mon'                 #   laptop wifi interface
+
+def send_packets(pipe):
     # This should be replaced with the resolver later
-    p_end, p_send = pipes
-    target_ip = "192.168.0.125"
-    src_addr = "DE:AD:BE:EF:DE:AD"
+    target_ip = G_HOME # <---------------
+    src_addr = SRC # <---------------
     seq = 0
-    while not p_end.poll():
+    while not pipe.poll():
         # This is where it should send a packet every 5ms
             # print("Sending TCP SYN frames to {} on channel {}".format(target_ip, channel))
         packet = Ether(src=src_addr) / IP(dst=target_ip) / TCP(seq=seq,dport=80,flags="S")
         seq += 1
-        p_send(packet)
-        sendp(packet, iface="eno1", verbose=False)
+        pipe.send(packet)
+        sendp(packet, iface=PC_ETH, verbose=False) # <---------------
         time.sleep(0.005)
-        # Kill feature (for exiting / safety)
+    return
 
 def packet_saver(pipe):
+    global loggy, start_time
+    packets = []
     count = 0
-    while True:
-        print("SUB %04d " %(count))
-        count += 1  
-        if pipe.poll():
-            offset = pipe.recv()
-            print(f"\nreceived go: {offset}ms offset\n")
-            break
-        time.sleep(0.5)
+    
+    def process_ping(packet):
+        nonlocal packets
+        
+    sniff(iface=PC_WIFI,prn=lambda pkt: process_ping(pkt)) # <---------------
+    return
      
 def sniff_beacons(pipe):
-    global start_time
+    global start_time, loggy
     times = []
-    packet_count = [1]
-    target_count = 51
+    packet_count = 0
+    
     def isBeacon(packet,MAC):
         return (packet.haslayer(Dot11) and packet.type == 0 and packet.subtype == 8 and packet.addr2 == MAC)
-    def process_packet(packet_count,packet):
-        if isBeacon(packet,'60:26:ef:b2:28:a2'):
+    
+    def process_packet(packet):
+        nonlocal packet_count
+        if isBeacon(packet,SHERI_AND_KUZ): # <---------------
             # determinant logic only works if we get beacons every 102ms.
-            dif_time = time.time()
-            offset = ((dif_time-start_time) * 1000) % 102.4
+            offset = ((time.time()-start_time) * 1000) % 102.4
             times.append(offset)
-            l.debug("%03d found MAC: %s with SSID: %s at Time: %f" %(packet_count[0], packet.addr2, packet.info,times[-1]))
-            
-            packet_count[0] += 1
-            if packet_count[0] >= target_count:
+            loggy.debug("%03d found MAC: %s with offset: %fms" %(packet_count, packet.addr2, offset))
+            packet_count += 1
+            if packet_count >= BEACON_SNIFFS:
                 pipe.send(np.mean(times))
-                return
         return
-    sniff(iface="wlp1s0mon",prn=lambda pkt: process_packet(packet_count,pkt), stop_filter=lambda _: packet_count[0] >= target_count)
+                
+    sniff(iface=PC_WIFI,prn=lambda pkt: process_packet(pkt), stop_filter=lambda _: packet_count >= BEACON_SNIFFS) # <---------------
+    return
 
 
 if __name__ == "__main__":
     loggy = l.getLogger(__name__)
     loggy.setLevel(l.DEBUG)
+    formatter = l.Formatter('%(levelname)s - %(message)s')
+    console_handler = l.StreamHandler()
+    console_handler.setLevel(l.DEBUG)
+    console_handler.setFormatter(formatter)
+    loggy.addHandler(console_handler)
+    #GLOBAL START TIME
     start_time = time.time()
-    p_save_t, p_save_g = multiprocessing.Pipe()
-    p_sendstop_t, p_sendstop_g = multiprocessing.Pipe()
+    p_offset_t, p_offset_g = multiprocessing.Pipe()
     p_pktsend_t, p_pktsend_g = multiprocessing.Pipe()
     # Create processes
-    sender_process = multiprocessing.Process(target=send_packets, args=((p_sendstop_g,p_pktsend_t),))
-    saver_process = multiprocessing.Process(target=packet_saver, args=(p_save_g,))
-    receiver_process = multiprocessing.Process(target=sniff_beacons, args=(p_save_t,))
+    sender_process = multiprocessing.Process(target=send_packets, args=(p_pktsend_t,))
+    saver_process = multiprocessing.Process(target=packet_saver, args=((p_offset_g,p_pktsend_g),))
+    receiver_process = multiprocessing.Process(target=sniff_beacons, args=(p_offset_t,))
     # Start Processes
     sender_process.start()
     saver_process.start()

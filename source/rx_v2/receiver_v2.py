@@ -193,86 +193,82 @@ class WlskReceiver:
         # Row 0 is the time of hte packet sent out 
         # Row 1 is the time the response came back for that packet 
         # Row 2 is the RTT for the ping. 
+        
+        # this holds all the data
         self.rx_data = []
-        for i in range(self.num_channels):
+        
+        for i in range(self.num_receivers):
+            # fill all the data with 0s
             self.rx_data.append([[0.00 for i in range(0, self.max_pings)] for j in range(3)])
         
-        if self.rx_sample_with_pings:
-            # Iterate through sniffed packets, calculating RTT and filling array
-            def process_packet(packet_obj: RawWlskPingPacket = None):
-                if packet_obj is None:
-                    return
-                chan = packet_obj.channel
-                idx = packet_obj.index
-                # Check if the spot is already filled 
-                if self.rx_data[chan][0][idx] == 0:
-                    # First time
-                    self.rx_data[chan][0][idx] = packet_obj.timestamp
-                else:
-                    # This is probably the ping response. Populate the rest of the matrix
-                    rtt = packet_obj.timestamp - self.rx_data[chan][0][idx]
-                    if (rtt >=0 and rtt < 5):
-                        self.rx_data[chan][1][idx] = packet_obj.timestamp
-                        self.rx_data[chan][2][idx] = rtt
-                    
-            for packet in self.sniffed_packets:
-                packet_obj = RawWlskPingPacket(packet)
-                if packet_obj.successfully_parsed:
-                    process_packet(packet_obj)
-        else:
-            # Iterate through sniffed packets, calculating RTT and filling array
-            startTime = self.sniffed_packets[0][TCP].time
-            max_ping_seq = self.max_pings
-            self.rx_data[0][0][0] = startTime
-            subprocess.check_output('echo "Suspicious Packets: "> sus.txt', shell=True)
-            subprocess.check_output('echo "Missing Packets: "> zeroes.txt', shell=True)
-            for packet in self.sniffed_packets:
-                ackId = packet[TCP].ack
-                ackResponseId = ackId - 1
-                seq = packet[TCP].seq
-                dport = packet[TCP].dport
-                sport = packet[TCP].sport
-                
-                # Figure out which channel it is on
-                channel = 0
-                outgoing = True
-                if dport == 80 and sport < self.num_channels:
-                    channel = sport
-                    outgoing = True
-                elif sport == 80 and dport < self.num_channels:
-                    channel = dport
-                    outgoing = False
-                else:
-                    # Probably a non-wlsk packet sniffed. Don't process it. 
-                    subprocess.check_output('echo "c: {} s: {} d: {}">> sus.txt'.format(channel, sport, dport), shell=True)
-                    continue
-
-                if outgoing and seq != None and seq < max_ping_seq:
-                    self.rx_data[channel][0][seq] = packet.time
-                    # if seq > 4000 and seq < 4100:
-                    #     print("{} - ch{} - {} ->".format(packet.time, channel, seq))
-                elif not outgoing and ackResponseId != None and ackResponseId < max_ping_seq:
-                    # We believe that this is one of the packets coming back and time of original SYN packet is already stored 
-                    rtt = packet.time - self.rx_data[channel][0][ackResponseId]
-                    self.rx_data[channel][1][ackResponseId] = packet.time
-                    if rtt > 0 and rtt < .5:
-                        self.rx_data[channel][2][ackResponseId] = rtt
-                    else:
-                        self.rx_data[channel][2][ackResponseId] = -.01
-                    # if ackResponseId > 4000 and ackResponseId < 4100:
-                    #     print("{} - ch{} - {} <- RTT: {}".format(packet.time, channel, ackResponseId, rtt))
-                    
-                else:
-                    # Probably a non-wlsk packet that has same ports as ours
-                    print("impasta!")
-                    continue
         
-        # for idx, val in enumerate(self.rx_data[0][2]):
-        #     if val == 0:
-        #         a = self.rx_data[0][0][idx]
-        #         b = self.rx_data[0][1][idx]
-        #         c = self.rx_data[0][2][idx]
-        #         subprocess.check_output('echo "Ch: 0, missing seq: {}; {} {} {}">> zeroes.txt'.format(idx,a,b,c), shell=True)
+        '''Iterate through sniffed packets, calculating RTT and filling array'''
+        
+        # This is the 'original time' of the first packet i guess? as in start time of the recording
+        startTime = self.sniffed_packets[0][TCP].time
+        
+        # in this instance the pings are counted to the max - mine has to be just counting
+        max_ping_seq = self.max_pings
+        
+        # set the original corner data point now that we have it
+        self.rx_data[0][0][0] = startTime
+        
+        # I think that this is just to get the files created if they don't exist? Or begin rewriting them
+        subprocess.check_output('echo "Suspicious Packets: "> sus.txt', shell=True)
+        subprocess.check_output('echo "Missing Packets: "> zeroes.txt', shell=True)
+        
+        # This is the process of actually determining the RTT
+        for packet in self.sniffed_packets:
+            # get the response ID of the packet
+            ackId = packet[TCP].ack
+            # TCP SYN packets are incremental in seq - get the orignial SYN ID
+            ackResponseId = ackId - 1
+            # Why does it need the return seq number?
+            seq = packet[TCP].seq
+            # get the destination and source port - not sure how those determine the WLSK-ness. Do we use a weird port?
+            dport = packet[TCP].dport
+            sport = packet[TCP].sport
+            
+            # Figure out which channel it is on - I think channel really means revceiver?
+            channel = 0
+            ##### What does outgoing mean?
+            outgoing = True
+            
+            """This is how we tell between outgoing and incoming packets, but are we sniffing both?"""
+            
+            # if the packet is from the router, mark it as so
+            if dport == 80 and sport < self.num_receivers:
+                channel = sport
+                outgoing = True
+            #if the packet is from our machine, mark it as so
+            elif sport == 80 and dport < self.num_receivers:
+                channel = dport
+                outgoing = False
+            # This is probably a non-wlsk packet. Don't process it.
+            else: 
+                subprocess.check_output('echo "c: {} s: {} d: {}">> sus.txt'.format(channel, sport, dport), shell=True)
+                continue
+
+            """It seems like sniff is looking at both the outgoing and incoming packets - is that intentional? Solvable"""
+            
+            # if the packet is coming from our machine, assign its time to row 0
+            if outgoing and seq != None and seq < max_ping_seq:
+                self.rx_data[channel][0][seq] = packet.time
+                
+            # if the packet is coming into our machine, calculate the rtt and assign rows 1 and 2
+            elif not outgoing and ackResponseId != None and ackResponseId < max_ping_seq:
+                
+                # We believe that this is one of the packets coming back and time of original SYN packet is already stored 
+                rtt = packet.time - self.rx_data[channel][0][ackResponseId]
+                self.rx_data[channel][1][ackResponseId] = packet.time
+                if rtt > 0 and rtt < .5:
+                    self.rx_data[channel][2][ackResponseId] = rtt
+                else:
+                    self.rx_data[channel][2][ackResponseId] = -.01
+            else:
+                # Probably a non-wlsk packet that has same ports as ours
+                print("impasta!")
+                continue
 
         # create the temporary directory
         print("Creating directory and saving the data")
@@ -283,11 +279,11 @@ class WlskReceiver:
         
         fig = plt.figure()
         
-        for i in range(self.num_channels):   
+        for i in range(self.num_receivers):   
             csv_path = os.path.join(tmp_dir, str(i) + ".csv")
             self._save_csv(csv_path, self.rx_data[i])
             # Add Subplot
-            ax = fig.add_subplot(self.num_channels, 1, i + 1)
+            ax = fig.add_subplot(self.num_receivers, 1, i + 1)
             ax.plot(self.rx_data[i][2], color='black', linewidth=0.1)
 
         # Save a Graphic of the raw data for later inspection
@@ -345,13 +341,13 @@ class WlskReceiver:
             # print("Sending Pings to {} on channel {}".format(target_ip, channel))
             packets = []
             for i in range(self.max_pings):
-                for c in range (self.num_channels):
+                for c in range (self.num_receivers):
                     # Create an ICMP Echo Request packet with custom payload
                     target_ip = self.target_ips[c]
                     src_addr = self.src_addrs[c]
                     packet = Ether(src=src_addr)/IP(dst=target_ip)/ICMP()/("wlsk_" + str(c) + "_" + str(i)) # type: ignore
                     packets.append(packet)
-            sendp(packets, iface=self.interface, inter=self.interval/self.num_channels)
+            sendp(packets, iface=self.interface, inter=self.interval/self.num_receivers)
             print("Done sending")
         else:
             # print("Sending TCP SYN frames to {} on channel {}".format(target_ip, channel))
@@ -360,6 +356,7 @@ class WlskReceiver:
                 for c in range(self.num_receivers):
                     target_ip = self.target_ips[c]
                     src_addr = self.src_addrs[c]
+                    # Doesn't this mean that the port is random?
                     packet = Ether(src=src_addr) / IP(dst=target_ip) / TCP(seq=i, sport=c, dport=80,flags="S")
                     packets.append(packet)
             print("Sending {} packets at an interval of {}".format(len(packets), self.interval / self.num_receivers))

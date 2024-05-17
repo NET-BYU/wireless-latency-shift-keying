@@ -3,9 +3,7 @@
     "rx_params": {
         "rx_interface":"eno1",
         "rx_ping_interval": 0.005,
-        "rx_timeout_limit": 300,
-        "rx_max_pings": 8500,
-        "rx_sample_with_pings": false
+        "rx_timeout_limit": 300
     },
     "reflectors": {
         "num_receivers": 1,
@@ -19,10 +17,6 @@
         "max_packets": 1000
     },
     "utilities": {
-        "collect_channel_utilization": false,
-        "channel_util_if": "wlp7s0f4u2u4mon",
-        "channel_util_time": 45,
-        "channeL_util_ssid": "TP-Link_13FA",
         "use_decode_utilities": false
     }
 }

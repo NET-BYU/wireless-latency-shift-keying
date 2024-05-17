@@ -41,18 +41,10 @@ class WlskReceiver:
         self.interface = "enp5s0"
         self.interval = 0.005
         self.timeout = 10
-        self.max_pings = 100
         self.timeout = 30
-        self.sniff_time_sec = self.max_pings * self.interval * 1.2 + 1
         self.num_receivers = 1
         self.target_ips = ["wlsk-pt-node.local"]
         self.src_addrs = ["DE:AD:BE:EF:DE:AD"]
-        self.rx_sample_with_pings = False
-        self.channel_util_if = "wlan0mon"
-        self.collect_channel_util = False
-        self.channel_util_sample_time = 45
-        self.channel_util_sample_ssid = "TP-Link_13FA"
-        self.util_rate = None
         self.sync_word = [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0]
         self.barker_code = [1,1,1,-1,-1,-1,1,-1,-1,1,-1]
         self.packet_length = 32
@@ -61,12 +53,10 @@ class WlskReceiver:
                 
         # Runtime variables
         self.rx_q = None
-        self.util_q = None
         self.rx_data = []
         self.ping_processes = []
         self.ping_process = None
         self.sniff_process = None
-        self.util_sample_process = None
         self.msg_id = 0
         self.output_dir = None
         self.sniffed_packets = None
@@ -95,8 +85,6 @@ class WlskReceiver:
                 self.interface = rx_params["rx_interface"]
                 self.interval = rx_params["rx_ping_interval"]
                 self.timeout = rx_params["rx_timeout_limit"]
-                self.max_pings = rx_params["rx_max_pings"]
-                self.rx_sample_with_pings = rx_params["rx_sample_with_pings"]
                 # Reflector Parameters
                 self.num_receivers = reflectors["num_receivers"]
                 self.target_ips = reflectors["target_ips"]
@@ -107,10 +95,6 @@ class WlskReceiver:
                 self.packet_length = message["packet_length"]
                 self.max_packets = message["max_packets"]
                 # Utility Parameters
-                self.collect_channel_util = utilities["collect_channel_utilization"]
-                self.channel_util_if = utilities["channel_util_if"]
-                self.channel_util_sample_ssid = utilities["channeL_util_ssid"]
-                self.channel_util_sample_time = utilities["channel_util_time"]
                 
             self.l.debug("WLSK sync ({} bit): {}".format(len(self.sync_word),self.sync_word))
             self.l.debug("WLSk barker ({} bit): {}".format(len(self.barker_code),self.barker_code))
@@ -372,11 +356,4 @@ class WlskReceiver:
             packets = sniff(timeout=self.sniff_time_sec + 5, iface=self.interface, filter='tcp')
         print("Done Sniffing")
         rx_q.put(packets)
-        return
-    
-    def _sample_channel_util(self):
-        # Create Object 
-        chann_util_sampler = WlskChanUtilSampler(self.channel_util_if)
-        util_rate = chann_util_sampler.measure_util_rate(self.channel_util_sample_time, self.channel_util_sample_ssid)
-        self.util_q.put(util_rate)
         return

@@ -1,7 +1,4 @@
 from decoder_v2 import WlskDecoder
-import sys
-sys.path.append("../..")
-from source.receiver.sample_util import WlskChanUtilSampler
 from multiprocessing import Process, Queue
 from scapy.all import Ether, IP, TCP
 import matplotlib.pyplot as plt
@@ -14,7 +11,7 @@ import socket
 import json
 import os
 
-class WlskReceiver:
+class WlskReceiver_old:
     """
         I dunno what it does yet. Don't bug me about it.
     """

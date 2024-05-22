@@ -1,9 +1,10 @@
-import multiprocessing
-import multiprocessing.process
+from multiprocessing import Process, Queue, Value, Event
 from scapy.all import Ether, IP, TCP, Dot11
 import matplotlib.pyplot as plt
+import multiprocessing as mlti
 from scapy.all import *
 from enum import Enum, auto
+from random import randint
 import logging as l
 import numpy as np
 import subprocess
@@ -32,7 +33,7 @@ SPORT = 25565
 PING_INT = 0.005
 # MAC ADDRESSES:
 SHERI_AND_KUZ = '9c:4f:5f:08:27:7e'     #   Sheri and kuz (neighbor @ home)
-BYU_IOT_EB = '60:26:ef:b2:28:a2'        #   BYU-IOT-EB
+EB_IOT_LAB = '60:26:ef:b2:28:a2'        #   BYU-IOT-EB
 # INTERFACES:
 LC_ETH = 'eno1'                         #   lab computer ethernet
 LC_WIFI = 'wlp1s0mon'                   #   lab computer wifi
@@ -67,7 +68,7 @@ PC_WIFI = 'wlp2s0mon'                   #   laptop wifi interface
 
 def _send_pings(pipe,stopped) -> None:
     global start_time,loggy
-    loggy.info("HEAD - Beginning Ping Process")
+    loggy.info("HEAD - Beginning ping process")
     
     # This should be replaced with the resolver later.
     target_ip = RPI_NODE # <---------------
@@ -91,13 +92,13 @@ def _send_pings(pipe,stopped) -> None:
         
         # this sets the interval in leiu of the parameter
         time.sleep(PING_INT)
-    loggy.info("HEAD - pinger ended.")
+    loggy.warning("HEAD - ending pinger process")
     return
 
 
-def _sniff_packets(queue, stopped) -> None:
+def _sniff_packets(Pqueue_out, stopped) -> None:
     global loggy
-    loggy.info("HEAD - beginning sniff process")
+    loggy.info("HEAD - Beginning sniff process")
     
     sniff_filter = 'tcp port 25565'
     
@@ -116,16 +117,16 @@ def _sniff_packets(queue, stopped) -> None:
             else:
                 return        
             if outgoing:
-                queue.put((seq, packet.time, 0))
+                Pqueue_out.put((seq, packet.time, 0))
                 # loggy.debug("SNIFFER - seq: {} ack: {} (outgoing)".format(seq,ackId))
             else:
-                queue.put((ackR, packet.time, 1))
+                Pqueue_out.put((ackR, packet.time, 1))
                 # loggy.debug("SNIFFER - seq: {} ack: {} (incoming)".format(seq,ackId))
         else:
             print("SNIFFER - EH??? : {}".format(packet))
                 
     sniff(iface=LC_ETH,prn=lambda pkt: process_packet(pkt),filter=sniff_filter, stop_filter=lambda _: stopped.value == True) # <---------------
-    loggy.info("HEAD - sniffer ended.")
+    loggy.warning("HEAD - ending sniffer process")
     return
 
 class Request(Enum):
@@ -141,7 +142,7 @@ class Request(Enum):
 
 def _save_packets(Pqueue_in,Rqueue_out,requestee,stopped) -> None:
     global start_time, loggy
-    loggy.info("HEAD - beginning packet save process")
+    loggy.info("HEAD - Beginning saver process")
     
     pkt_list = [{},{},{}]
     waiting = False
@@ -159,28 +160,29 @@ def _save_packets(Pqueue_in,Rqueue_out,requestee,stopped) -> None:
                 highest_key = 0 if (highest_key == None) else highest_key
                 break
             highest_key = key
-        # loggy.debug(highest_key)
+        # loggy.debug("KEY RETURN IS: {}".format(highest_key))
         return highest_key
     
     while not stopped.value:
-         
         # while waiting, if you get another poll, that's a problem. Too many requests.
         if requestee.poll():
             if waiting:
                 loggy.error("SAVER - received messages too fast. : {}".format(requestee.recv()))
                 stopped.value = True
             request, Rtime = requestee.recv()
+            loggy.debug("SAVER - recevied message {}".format(request.name))
             waiting = True
 
-        if request == Request.SYNC or request == Request.MSG and ready:
+        if (request == Request.SYNC or request == Request.MSG) and ready:
             lpkt = find_starting_packet(pkt_list[1],Rtime)
+            loggy.debug("lpkt: {} hpkt: {}".format(lpkt,hpkt))
+            loggy.debug("full list len: {}".format(len(pkt_list[1])))
             outgoing_packets = [{k: v for k, v in d.items() if lpkt <= k <= hpkt} for d in pkt_list]
+            loggy.debug("outgoing packet_list size: {}".format(len(outgoing_packets[1])))
             Rqueue_out.put(outgoing_packets)
-            # loggy.debug("lpkt: {} hpkt: {}".format(lpkt,hpkt))
-            # loggy.debug("full list len: {}".format(len(pkt_list[1])))
             waiting, ready, request, Rtime = False, False, None, None
             
-        elif request == Request.DELETE:
+        elif request == Request.DELETE and ready:
             delpkt = find_starting_packet(pkt_list[1],Rtime)
             # loggy.debug("delpkt: {}".format(delpkt))
             for key in list(pkt_list[1].keys()):
@@ -188,12 +190,13 @@ def _save_packets(Pqueue_in,Rqueue_out,requestee,stopped) -> None:
                     del pkt_list[0][key]
                     del pkt_list[1][key]
                     del pkt_list[2][key]
+            Rqueue_out.put([0])
+            waiting, ready, request, Rtime = False, False, None, None
             # loggy.debug("Full stack (post):\nSET0: {}\nSET1: {}\nSET2: {}".format(pkt_list[0],pkt_list[1],pkt_list[2]))
-            request, Rtime = None, None
         
         # get a packet : layer 0 = outgoing, 1 = incoming
         pkt_num, pkt_time, layer = Pqueue_in.get()
-        # loggy.debug("IMPORT - Got pkt: {} {} {}".format(pkt_num,pkt_time,out))
+        # loggy.debug("SAVER - Got pkt: {} {} {}".format(pkt_num,pkt_time,layer))
         
         # save the packet time in its corresponding layer
         pkt_list[layer][pkt_num] = pkt_time
@@ -209,66 +212,92 @@ def _save_packets(Pqueue_in,Rqueue_out,requestee,stopped) -> None:
             # only ask on incoming messages because otherwise the keys don't line up
             if Rtime is not None and pkt_time - Rtime > request.value:
                 ready = True
+                loggy.debug("SAVER - searching for high packet: {}".format(Rtime + request.value))
                 hpkt = find_starting_packet(pkt_list[1],Rtime + request.value)
         
-    loggy.info("HEAD - save packets ended.")
+    loggy.warning("HEAD - ending saver process")
     return
 
-def _decode_chunks(Rqueue_in,Mqueue_out,requester, stopped) -> None:
+def _find_sync_word(stack) -> bool:
+    time.sleep(4)
+    return True if randint(1,10) > 7 else False
+
+def _decode_message(stack) -> list:
+    time.sleep(7)
+    return [1,0,1,0,1,0,1,0,1,0]
+
+def _request_chunks(Rqueue_in,Mqueue_out,requester, stopped) -> None:
+    TIME_LIMIT = 30
+    loggy.info("HEAD - Beginning decoder process")
+    request_time = time.time()
+    time.sleep(2)
     while not stopped.value:
-        test_time = time.time()
-        loggy.debug("test time: {}".format(test_time))
-        time.sleep(2)
-        requester.send((Request.MSG,test_time))
-        # requester.send((Request.MSG,test_time))
-        loggy.debug("Sending request")
-        test_stack = Rqueue_in.get()
-        loggy.debug("test stack:\n{}".format(test_stack[1]))
-        time.sleep(2)
-        requester.send((Request.DELETE,test_time + Request.MSG.value))
-        break
-        # make a request for TIME_WINDOW worth of data
-        # process that request for sync word
-            # If sync word found:
-                # make request for message worth of data
-                # decode the data > queue_out
-                # make dump request
-            # if sync word not found:
-                # adjust values for next request
-    loggy.info("HEAD - decoder ended.")
+        try:
+            loggy.debug("DECODE - request for time {} with window {}".format(request_time,Request.SYNC.value))
+            requester.send((Request.SYNC,request_time))
+            stack_in = Rqueue_in.get(timeout=TIME_LIMIT)
+            # process that request for sync word
+            sunk = _find_sync_word(stack_in)
+            if sunk:
+                loggy.info("DECODE - Found sync word! Requesting for time {} with window".format(request_time,Request.SYNC.value))
+                requester.send((Request.MSG,request_time))
+                stack_in = Rqueue_in.get(timeout=TIME_LIMIT)
+                message = _decode_message(stack_in)
+                Mqueue_out.put(message)
+                loggy.info("DECODE - Sending delete request for time {}".format(request_time + Request.MSG.value))
+                requester.send((Request.DELETE,request_time + Request.MSG.value))
+                stack_in = Rqueue_in.get(timeout=TIME_LIMIT)
+                if stack_in[0] != 0:
+                    loggy.error("DECODE - got invalid stack return on delete. Quitting")
+                    stopped.value = True
+            else:
+                loggy.info("DECODE - request {} returned nothing".format(request_time))
+                request_time += 1
+        except Exception:
+            loggy.error("DECODE - timeout happened on a request. Exiting")
+            stopped.value = True
+    loggy.warning("HEAD - ending decoder process")
     return
 
-def listen_for_messages(msg_queue) -> list:
+def block_until_message(msg_queue) -> list:
     return msg_queue.get()
     
     
 if __name__ == "__main__":
-    
+    # DEBUG Levels
+    LOG_PKTS = 5
+    LOG_DUMPS = 6
+    LOG_OPS = 7
+    l.addLevelName(LOG_PKTS,"DUMP")
+    l.addLevelName(LOG_DUMPS,"PACKET")
+    l.addLevelName(LOG_OPS,"OPERATE")
     # set up logger
+    LOG_LEVEL = l.DEBUG
     loggy = l.getLogger(__name__)
-    loggy.setLevel(l.DEBUG)
+    loggy.setLevel(LOG_LEVEL)
     formatter = l.Formatter('%(levelname)s - %(message)s')
     console_handler = l.StreamHandler()
-    console_handler.setLevel(l.DEBUG)
+    console_handler.setLevel(LOG_LEVEL)
     console_handler.setFormatter(formatter)
     loggy.addHandler(console_handler)
 
     # GLOBALS
     start_time = 0
-    processing_queue = multiprocessing.Queue()
-    decoding_queue = multiprocessing.Queue()
-    message_queue = multiprocessing.Queue()
-    process_killer = multiprocessing.Value('b', False)
-    # offset_tx, offset_rx = multiprocessing.Pipe()
-    pktsend_tx, pktsend_rx = multiprocessing.Pipe()
-    request_tx, request_rx = multiprocessing.Pipe()
+    processing_queue = mlti.Queue()
+    decoding_queue = mlti.Queue()
+    message_queue = mlti.Queue()
+    process_killer = mlti.Value('b', False)
+    
+    # offset_tx, offset_rx = mlti.Pipe()
+    pktsend_tx, pktsend_rx = mlti.Pipe()
+    request_tx, request_rx = mlti.Pipe()
     
     # Create processes
-    ping_process = multiprocessing.Process(target=_send_pings, args=(pktsend_tx,process_killer))
-    sniffer_process = multiprocessing.Process(target=_sniff_packets, args=(processing_queue,process_killer))
-    # receiver_process = multiprocessing.Process(target=_sniff_beacons, args=(offset_tx,))
-    saver_process = multiprocessing.Process(target=_save_packets, args=(processing_queue,decoding_queue,request_rx,process_killer))
-    decoder_process = multiprocessing.Process(target=_decode_chunks, args=(decoding_queue,message_queue,request_tx,process_killer))
+    ping_process = mlti.Process(target=_send_pings, args=(pktsend_tx,process_killer))
+    sniffer_process = mlti.Process(target=_sniff_packets, args=(processing_queue,process_killer))
+    # receiver_process = mlti.Process(target=_sniff_beacons, args=(offset_tx,))
+    saver_process = mlti.Process(target=_save_packets, args=(processing_queue,decoding_queue,request_rx,process_killer))
+    decoder_process = mlti.Process(target=_request_chunks, args=(decoding_queue,message_queue,request_tx,process_killer))
     
     # Start Processes
     ping_process.start()
@@ -277,12 +306,16 @@ if __name__ == "__main__":
     saver_process.start()
     decoder_process.start()
     
-    loggy.info("SYSTEM - press enter to kill the receiver.")
-    input()
+    # loggy.info("SYSTEM - press enter to kill the receiver.")
+    # input()
+    message = block_until_message(message_queue)
+    loggy.info("Got a message! ending the receiver.")
+    time.sleep(2)
     process_killer.value = True
     time.sleep(2)
-    ping_process.terminate()
-    sniffer_process.terminate()
-    saver_process.terminate()
-    decoder_process.terminate()
+    
+    # ping_process.terminate()
+    # sniffer_process.terminate()
+    # saver_process.terminate()
+    # decoder_process.terminate()
 

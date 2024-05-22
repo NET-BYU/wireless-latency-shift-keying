@@ -1,0 +1,30 @@
+{
+    "version": 2.1,
+
+    "rx_parameters": {
+        "rx_interface":"eno1",
+        "rx_ping_interval": 0.005,
+        "rx_timeout_limit": 300,
+        "pkt_target_ip": "192.168.0.156",
+        "pkt_src_addr": "DE:AD:BE:EF:DE:AD",
+        "pkt_source_port": 25565,
+        "pkt_dest_port": 80
+    },
+
+    "decoding": {
+        "sync_word": [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0],
+        "barker_code": [1,1,1,-1,-1,-1,1,-1,-1,1,-1],
+        "packet_length": 32,
+        "decoder_timeout": 60,
+        "window_edge": 4,
+        "window_rollover": 10
+    },
+
+    "utilities": {
+        "use_beacon_sniffs": false,
+        "beacon_interface": "wlp1s0mon",
+        "beacon_ssid": "EB-IOT-LAB",
+        "beacon_MAC": "60:26:ef:b2:28:a2",
+        "num_of_sniffs": 20
+    }
+}

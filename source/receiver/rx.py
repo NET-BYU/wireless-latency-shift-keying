@@ -136,7 +136,7 @@ class WlskReceiver:
             self.interface = rx_params["rx_interface"]
             self.interval = rx_params["rx_ping_interval"]
             self.num_pings = rx_params["rx_num_pings"]
-            self.timeout = rx_params["rx_timeout_limit"]
+            # self.timeout = rx_params["rx_timeout_limit"]
             self.sniff_time_sec = self.num_pings * self.interval * 1.2 + 1
             self.num_channels = rx_params["rx_num_channels"]
             self.target_ips = rx_params["rx_target_ips"]
@@ -511,6 +511,8 @@ if __name__ == "__main__":
         # Decode the received data 
         for channel, channel_rx_data in enumerate(rx_data):
             # print(f"CHANNEL: {channel}, RX: {channel_rx_data}")
+            differences = [channel_rx_data[0][i+1] - channel_rx_data[0][i] for i in range(len(channel_rx_data[0]) - 1)]
+            print("avg time between packets: {}".format(sum(differences)/len(differences)))
             return_time_stamps_array = np.array(channel_rx_data[1])
             toa_dist, toa_dist_times = decoder_utils.toa_distribution(return_time_stamps_array)
             decode_output_dir = os.path.join(output_dir, "test_iter_{}".format(i))

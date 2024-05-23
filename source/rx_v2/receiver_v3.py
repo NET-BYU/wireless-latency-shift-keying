@@ -26,13 +26,22 @@ l.addLevelName(LOG_OPS,"Log Operations")
 
 class WlskReceiver:
     '''
-    This is not the receiver you are looking for.
-    NOTE TO SELF GO CHECK YOUR COMMENTS!!
+    Wireless Latency Shift Keying is a method of encoding data into network latency,
+    allowing a device not in a network to communicate into the network without
+    proper authentication beforehand. see the Github for more information:
+    https://github.com/NET-BYU/wireless-latency-shift-keying/tree/main 
     '''
     VERSION = 2.1
         
-    def __init__(self,config_path: string,log_to_console: bool=False,log_level: int=None,logfile: string=None) -> None:
+    def __init__(self,config_path: string,log_to_console: bool=False,log_level: int=l.INFO,logfile: string=None) -> None:
+        '''WLSK Receiver
         
+        Keyword Arguments:
+        - config_path: string   -- the path the configuration file for the receiver.
+        - log_to_console: bool  -- log output messages to the console.
+        - log_level: int        -- determine the log level WLSK should run at.
+        - logfile: string       -- if given, WLSK will log outputs to the given file.
+        '''
         self.l = l.getLogger(__name__)
         self.l.setLevel(log_level)
         formatter = l.Formatter('WLSK: %(levelname)s - %(message)s')
@@ -115,6 +124,7 @@ class WlskReceiver:
         self.initialize(config_path)
         
     def initialize(self,configuration: string) -> bool:
+        '''run this funtion to load the parameters of the receiver based on a given config file.'''
         self.isInitalized = False
         self.l.info("HEAD - Initializing receiver...")
         try:
@@ -166,6 +176,7 @@ class WlskReceiver:
         return self.isInitalized
     
     def start_receiver(self) -> None:
+        '''starts a receiver that has been initialized but isn't running.'''
         if not self.isInitalized:
             self.l.error("HEAD - Tried to start an uninitialized recevier. Fail")
             return
@@ -179,6 +190,7 @@ class WlskReceiver:
             return
     
     def stop_receiver(self) -> None:
+        '''tells the running receiver to stop running. This may cause errors if it doesn't exit cleanly.'''
         if not self.running():
             self.l.warning("HEAD - cannot stop a receiver that isn't running.")
             return
@@ -197,21 +209,36 @@ class WlskReceiver:
             return
     
     def block_until_message(self) -> list:
+        '''blocks the running thread until a message is received in the queue.
+        Use has_a_message() and grab_message() instead to prevent blocking.'''
         return self.__message_queue.get()
     
     def has_a_message(self) -> bool:
+        '''returns true or false to indicate if the receiver has a message ready.'''
         return not self.__message_queue.empty()
     
     def grab_message(self) -> list:
+        '''attempts to grab a message from the message queue. Timeout is set in config file.'''
         try:
             return self.__message_queue.get(timeout=self.grab_timeout)
         except queue.Empty:
             return None
     
     def running(self) -> bool:
+        '''returns true or false to indicate if the receiver is active.'''
         return any(process.is_alive() for process in self.processes)
     
     def _send_wlsk_pings(self) -> None:
+        '''Pinger Process for WLSK
+        
+        The pinger process is the first to start when the receiver begins listening.
+        It simply catches its own start time as the 'global time' for the rest of the
+        processes to use, then tells other process to begin via the __global_start event
+        and starts sending TCP SYN packets at the rate specified in the config.
+        
+        This process starts automatically when start_receiver is called. It can be killed
+        with the __global_stop event.
+        '''
         self.l.info("HEAD - starting pinger; intvl = {}".format(self.ping_interval))
         
         # pinger sets the global time to be closest to the first ping
@@ -242,6 +269,15 @@ class WlskReceiver:
         return
     
     def _sniff_ping_packets(self) -> None:
+        '''Sniffer Process for WLSK
+        
+        The sniffer process uses Scapy sniff to listen to incoming packets, filters for
+        the specific TCP SYN packets being sent by the rx line in the pinger process.
+        It then forwards them along to the manager process via the process queue.
+        
+        This process cannot start until after the __global_start event. It can be killed 
+        with the __global_stop event.
+        '''
         # wait until the pinger has set the time (so you don't sniff / request early)
         self.__global_start.wait()        
         self.l.info("HEAD - Beginning sniff process")
@@ -283,6 +319,20 @@ class WlskReceiver:
         return 
     
     def _packet_manager(self) -> None:
+        '''Packet Manager Process for WLSK
+        
+        the packet manager receives a stream of packets from the sniffer process
+        via the process_queue. It then determines whether the packet was incoming
+        or outgoing, and assigns the appropriate values within the general pkt_list.
+        this list has 3 'channels': the outgoing time, the incoming time, and the
+        rtt. each channel is a dictionary where the key is the sequence number of
+        the packet, and the value is the time. The packet manager also fulfills 
+        requests made by the decoder process by giving it windows of stored data
+        and delete data that has been processed or deemed useless.
+        
+        This process cannot start until after the __global_start event. It can be killed 
+        with the __global_stop event.
+        '''
         # wait for pinger to give the okay
         self.__global_start.wait()
         self.l.info("HEAD - Beginning manager process")
@@ -347,19 +397,29 @@ class WlskReceiver:
         self.l.info("HEAD - ending manager process")
         return
   
-    '''TODO with decoder:
+    '''
+    TODO with decoder:
     - add the delete request to rolling windows - i.e. if you miss the sync word in 10 windows, you don't need to keep all that data.
     - actually, maybe just send a delete request for the data everytime that the sync word fails? so that it gets less clogged. Need
     to compare the amount of time it takes to do a big vs. little delete then to see if that takes too much time w/ extra requests.
     - add the noise floor listener function: something that listens for 10 seconds to get the max normal ping variance and throws out
     windows that don't spike above that - this way you don't try to correlate against regular data.
-    - go and fix the dumb __find_sync_word function because it doesn't work
-    - make the dumb __decode_message function becuase right now it is a LIE'''  
+    '''  
     def _request_and_decode(self) -> None:
+        '''Request and Decode Process for WLSK
+        
+        requests rolling windows of time from the manager process to analyze
+        data and search for messages. it first searches for sync words, after
+        which it requests a message size window of time and analyzes the data
+        as though it had been a prerecorded set of data. It will also periodically
+        send messages to the manager process to clear the old data that no
+        longer has any use to save space and clutter.
+        
+        This process cannot start until after the __global_start event. It can be killed 
+        with the __global_stop event.
+        '''
         self.__global_start.wait()
         self.l.info("HEAD - Beginning decoder process")
-
-        time.sleep(3) # TODO: Replace with noise listening
         
         # start the first window at around the time of the first ping
         request_time = self.__global_time.value
@@ -373,6 +433,8 @@ class WlskReceiver:
                 except queue.Empty:
                     continue
             return None
+        
+        time.sleep(3) # TODO: Replace with noise listening
         
         while not self.__global_stop.is_set():
             try:
@@ -395,7 +457,7 @@ class WlskReceiver:
                     message = self.__decode_message(stack_in)
                     self.__message_queue.put(message)
                     
-                    # Third request: flush the data that was in the manager so it doesn't get slow and cloggy :(
+                    # Third request: flush the data that was in the manager so it doesn't get cloggy :(
                     self.__request_tx.send((self.DELETE_REQ,request_time + self.MSG_REQ))
                     stack_in = listen_cautious(self.__decoding_queue,self.__global_stop)
                     if stack_in == None: break
@@ -404,7 +466,7 @@ class WlskReceiver:
                     if stack_in[0] != 0:
                         self.__global_stop.set()
                 else:
-                    # if you didn't find the sync word scroll
+                    # if you didn't find the sync word scroll 1 second - the windows are oversize so its fine
                     request_time += 1
             except Exception as e:
                 self.l.error("DECODE - an exception occured: {}".format(e))
@@ -412,7 +474,9 @@ class WlskReceiver:
         self.l.info("HEAD - ending decoder process")
         return
     
+    # TODO: This does not actually work? It still finds the sync word even on blank t-lines
     def __find_sync_word(self,stack: list) -> bool:
+        '''determines whether or not a WLSK sync word exists given a toa array in time. Returns true or false'''
         # I have no idea what this value means???
         cutoff = 10000
 
@@ -439,12 +503,15 @@ class WlskReceiver:
         self.l.debug("SYNC: didn't find sync word.")
         return False
     
+    # TODO: This does not exist
     def __decode_message(self,stack: list) -> list:
+        '''decodes a WLSK message from a toa array in time. returns a list of bits'''
         time.sleep(7)
         self.l.debug("--DECODE word test finished--")
         return [1,0,1,0,1,0,1,0,1,0]
     
     def __determine_packet_index(self, item_list: list, threshold: float) -> int:
+        '''determines packet indexing for creating windows of time. returns an integer index.'''
         sorted_items = sorted(item_list.items(), key=lambda x: x[1])
         highest_key = None
         for key,value in sorted_items:
@@ -455,7 +522,7 @@ class WlskReceiver:
         return highest_key
     
     def __what_the_plot(self,directory: string,toa_dist: list,xcorr: np.ndarray,show: bool=True) -> None:
-        
+        '''optional plotter for diagnostic information. Not used in the receiver main code.'''
         fig = plt.figure(figsize=(15,15))
         fig.suptitle("Results from testing")
         

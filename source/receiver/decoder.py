@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from matplotlib import style
 import os
 import pandas as pd
-from scipy import stats
 from scipy.signal import find_peaks
 
 class WlskDecoderUtils:

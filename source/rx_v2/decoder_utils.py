@@ -25,9 +25,6 @@ class WlskDecoderUtils:
                     else:
                         return_time_stamps.append(float(value))
                 line_count = line_count + 1
-
-            # print(time_stamps)
-            # print(f'Processed {line_count} lines.')
             return time_stamps, rtt_values, return_time_stamps
 
     def convert_timestamps_to_time_from_start(self, time_stamps):
@@ -95,30 +92,8 @@ class WlskDecoderUtils:
                 for bit in upscaled_zero:
                     code_upscaled.append(bit)
 
-
-        # window_len = len(code_upscaled)
-        # overlap_len = window_len - 1
-
-        # # Define the Hamming window
-        # window = np.hamming(window_len)
-
-        # # Initialize the output cross-correlation function
-        # corr = np.zeros(len(raw_data) + window_len - 1)
-        # for i in range(0, len(raw_data), window_len - overlap_len):
-        #     segment = raw_data[i:i+window_len]
-        #     if len(segment) < window_len:
-        #         break
-        #     segment_windowed = segment * window
-        #     corr[i:i+window_len*2-1] += np.correlate(segment_windowed, code_upscaled, mode='full')
-        # return corr
-
         conv = np.correlate(var_data,code_upscaled,"full")
-        # data_upscaled = [-1 for i in range(len(raw_data))]
-        # for idx, val in enumerate(data_upscaled):
-        #     if raw_data[idx] > 6:
-        #         for i in range(102):
-        #             data_upscaled[idx-i] = 1
-        # conv = np.correlate(data_upscaled, code_upscaled,"full")
+
         return conv-conv.mean()
     
     def plot_dist_sync_barker(self, toa_dist, xcorr_sync, xcorr_barker, test_dir, test_num, eval_x, test_raw_sample,ones, zeroes, show = False):

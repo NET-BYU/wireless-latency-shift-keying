@@ -427,17 +427,18 @@ if __name__ == "__main__":
     # Initialize the receiver using the config file and output directory 
     # For test in test iterations, run the receiver. 
     
-    input("-----BEGIN TESTING-----")
-    time.sleep(1)
+    # input("-----BEGIN TESTING-----")
+    # time.sleep(1)
     
-    testfilename = create_test_file()
+    # testfilename = create_test_file()
     
     if len(sys.argv) < 2:
         print("Usage: sudo python3 rx.py <output_dir> <config_path>")
         sys.exit(1)
     
     # output_dir = sys.argv[1]
-    output_dir = f"./tdumps/{testfilename}"
+    # output_dir = f"./tdumps/{testfilename}"
+    output_dir = f"./tdumps/asdf123"
     config_path = sys.argv[1]
     print("Starting Receiver..\nOutput directory:\t{}\nConfig Directory:\t{}".format(output_dir,config_path))
     time.sleep(1)
@@ -479,7 +480,7 @@ if __name__ == "__main__":
     
     for i in range(num_test_iterations):
         sub_time = time.time()
-        custom_txt = open(f"./test/{testfilename}.txt","a")
+        custom_txt = open(f"./test/asdf123.txt","a")
         print(f"iteration {i}")
         
         test_iter_remote_rssi= []

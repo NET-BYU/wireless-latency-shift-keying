@@ -21,6 +21,13 @@
     },
 
     "utilities": {
+        "save_mode": true,
+        "save_window": 100,
+        "savefile_num": 3,
+        "super_save": false,
+        "plot_directory": "/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/source/rx_v2/rx_test_plots/newplots/",
+        "noise_attention": 10,
+        "grab_timeout": 0.1,
         "use_beacon_sniffs": false,
         "beacon_interface": "wlp1s0mon",
         "beacon_ssid": "EB-IOT-LAB",

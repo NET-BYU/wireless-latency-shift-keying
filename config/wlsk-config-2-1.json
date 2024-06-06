@@ -2,10 +2,10 @@
     "version": 2.1,
 
     "rx_parameters": {
-        "rx_interface":"eno1",
+        "rx_interface":"wlp2s0",
         "rx_ping_interval": 0.005,
         "rx_timeout_limit": 300,
-        "pkt_target_ip": "192.168.0.156",
+        "pkt_target_ip": "192.168.0.246",
         "pkt_src_addr": "DE:AD:BE:EF:DE:AD",
         "pkt_source_port": 25565,
         "pkt_dest_port": 80

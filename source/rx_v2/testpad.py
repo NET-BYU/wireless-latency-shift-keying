@@ -4,7 +4,7 @@ import time
 
 if __name__ == "__main__":
     
-    new_rec = WlskReceiver("/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/config/wlsk-config-2-1.json",True,l.DEBUG)
+    new_rec = WlskReceiver("config/wlsk-config-2-1.json",True,l.DEBUG)
     
     # new_rec._WlskReceiver__isrunning.value = True
     # new_rec._send_wlsk_pings()

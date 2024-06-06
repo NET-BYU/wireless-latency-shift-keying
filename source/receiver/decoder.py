@@ -143,7 +143,7 @@ class WlskDecoder:
         self.utils = WlskDecoderUtils()
         self.initialized = True
 
-    def decode_single_test(self, toa_dist, test_dir = None, test_num = 0, save_plot = False):
+    def decode_single_test(self, toa_dist, test_dir = None, test_num = 0, save_plot = False, rtt_setup = []):
         toa_dist = toa_dist[0:]
         # bit_edges = []
         # x = 0
@@ -195,7 +195,7 @@ class WlskDecoder:
         # Get Peaks on the x correlation 
         ones, _ = find_peaks(xcorr_barker, height = 500)
         zeroes, _ = find_peaks(xcorr_barker * -1, height = 500)
-            
+    
         # Calculate Bit Decision X-values based on the sync word location.
         timed_xcorr_bit_windows = []
         ori_bit_windows = []
@@ -290,10 +290,10 @@ class WlskDecoder:
         
         print("Eval X coordinates: {}\n".format(bit_x_vals))
         # Generate Plot showing raw data
-        if save_plot:
-            self.utils.plot_dist_sync_barker(toa_dist, xcorr_sync, xcorr_barker, test_dir, test_num, bit_x_vals, timed_xcorr_bit_windows,ones,zeroes, False)
+        self.plot_noisy_noise(self,test_num,toa_dist,xcorr_sync,xcorr_barker,rtt_setup,test_dir,bg_color="#A9A9A9")
+        # if save_plot:
+        #     self.utils.plot_dist_sync_barker(toa_dist, xcorr_sync, xcorr_barker, test_dir, test_num, bit_x_vals, timed_xcorr_bit_windows,ones,zeroes, False)
         # self.utils.plot_dist_sync_barker(toa_dist, xcorr_sync, xcorr_barker, test_dir, test_num, bit_x_vals, timed_xcorr_bit_windows,ones,zeroes, self.single_test)
         # print("bit spacing: ",[timed_xcorr_bit_windows[i]-timed_xcorr_bit_windows[i-1] for i in range(1,len(timed_xcorr_bit_windows))])
         return bit_sequence
     
-

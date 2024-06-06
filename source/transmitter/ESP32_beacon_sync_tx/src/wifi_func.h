@@ -9,8 +9,9 @@
 #include "mbedtls/md.h"
 #include "nvs_flash.h"
 
-#define ENC_KEY = "9=8[&tR+6}8?=487"
-#define INT_KEY = "$B9;8/27.)>24;9T"
+#define ENC_KEY "9=8[&tR+6}8?=487"
+#define INT_KEY "$B9;8/27.)>24;9T"
+#define NET_SSID "WLSK-NET-2G"
 
 const float STRAP_LOSS[4] = {0.8, 0.6, 0.4, 0.2};
 
@@ -164,9 +165,9 @@ const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
   }
 }
 
-volatile uint8_t beacon_detected = 0;
-int16_t rssi_value;
-uint8_t addr_found = 0;
+volatile uint8_t BEACON_DETECTED = 0;
+int16_t RSSI_VALUE;
+uint8_t ADDR_FOUND = 0;
 
 //// this needs to be cleaned up to not transfer every packet to a struct but
 /// rather just look at the bits
@@ -202,12 +203,13 @@ void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
     // Serial.printf("Beacon %s\n", ssid);
     // if (!(strcmp(ssid, "NETGEAR22")))
     // if (!(strcmp(ssid, "WLSK-NET-2G")))
-    if (!(strcmp(ssid, "DD-WRT-2G"))) {
-      beacon_detected = 1;  // Beacon frame found, inform main loop
+    if (!(strcmp(ssid, NET_SSID))) {
+      BEACON_DETECTED = 1;  // Beacon frame found, inform main loop
+      Serial.println("Beacon Detected");
       int16_t temp = (int16_t)((wifi_pkt_rx_ctrl_t)ppkt->rx_ctrl).rssi;
       // Serial.println(temp);
-      rssi_value = temp;
-      // memcpy(&temp,(void*)(&rssi_value),2);
+      RSSI_VALUE = temp;
+      // memcpy(&temp,(void*)(&RSSI_VALUE),2);
       // Serial.println(rssi_value);
     }
   }
@@ -227,8 +229,8 @@ void mac2str(const uint8_t *ptr, char *string) {
 char addr1[] = "00:00:00:00:00:00\0";
 char addr2[] = "00:00:00:00:00:00\0";
 char addr3[] = "00:00:00:00:00:00\0";
-uint8_t router_mac[6];
-uint8_t ping_target_mac[6];
+uint8_t ROUTER_MAC[6];
+uint8_t PING_TARGET_MAC[6];
 
 // Keep track of unique sequence numbers
 strap_msg_frag_t *unique_msg_frag =
@@ -587,44 +589,14 @@ void wifi_scan_addr_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
     Serial.println();
   }
 
-  // // Print MAC address of source and destination
-  // Serial.print("Source MAC: ");
-  // for (int i = 0; i < 6; i++)
-  // {
-  //     Serial.printf("%02X", hdr->addr2[i]); // Print each byte with leading
-  //     zeros if (i < 5)
-  //         Serial.print(":");
-  // }
-  // Serial.println();
-
-  // Serial.print("Destination MAC: ");
-  // for (int i = 0; i < 6; i++)
-  // {
-  //     Serial.printf("%02X", hdr->addr1[i]); // Print each byte with leading
-  //     zeros if (i < 5)
-  //         Serial.print(":");
-  // }
-  // Serial.println();
-
-  // // Access the payload of the packet
-  // const uint8_t *payload = ipkt->payload;
-
-  // // Print the payload byte by byte
-  // Serial.println("Payload:");
-  // for (int i = 0; i < ppkt->rx_ctrl.sig_len; i++)
-  // {
-  //     Serial.printf("%02X", payload[i]);
-  //     Serial.print(" ");
-  // }
-  // Serial.println();
-
   // check against the who is the source
   if (hdr->addr3[0] == 0xDE && hdr->addr3[1] == 0xAD && hdr->addr3[2] == 0xBE &&
       hdr->addr3[3] == 0xEF && hdr->addr3[4] == 0xDE &&
       hdr->addr3[5] == 0xAD) {  // found the right packets
-    memcpy(router_mac, hdr->addr2, 6);
-    memcpy(ping_target_mac, hdr->addr1, 6);
-    addr_found = 1;
+    memcpy(ROUTER_MAC, hdr->addr2, 6);
+    memcpy(PING_TARGET_MAC, hdr->addr1, 6);
+    ADDR_FOUND = 1;
+    // Serial.println("Found the right packets");
   }
   // // debug stuff
   // mac2str(hdr->addr1, addr1);

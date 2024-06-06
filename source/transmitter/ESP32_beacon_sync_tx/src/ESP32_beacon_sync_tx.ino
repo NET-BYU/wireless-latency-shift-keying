@@ -31,16 +31,26 @@ uint8_t rx_char = 0;
 wlskStateHandle_t stateHandle;
 
 // Data to transmit
-uint8_t txData_0[32] = {1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1};
-uint8_t txData_1[32] = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0};
-uint8_t txData_2[32] = {1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0};
-uint8_t txData_3[32] = {1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1};
-uint8_t txData_4[32] = {1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0};
-uint8_t txData_5[32] = {1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1};
-uint8_t txData_6[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0};
-uint8_t txData_7[32] = {1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0};
-uint8_t txData_8[32] = {1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1};
-uint8_t txData_9[32] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0};
+uint8_t txData_0[32] = {1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1,
+                        1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1};
+uint8_t txData_1[32] = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+                        0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0};
+uint8_t txData_2[32] = {1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0,
+                        0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0};
+uint8_t txData_3[32] = {1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1,
+                        0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1};
+uint8_t txData_4[32] = {1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                        1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0};
+uint8_t txData_5[32] = {1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1,
+                        1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1};
+uint8_t txData_6[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0,
+                        0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0};
+uint8_t txData_7[32] = {1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1,
+                        0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0};
+uint8_t txData_8[32] = {1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0,
+                        0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1};
+uint8_t txData_9[32] = {1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0};
 
 uint8_t transmitData[32] = {0};
 
@@ -85,7 +95,8 @@ void selectTxData(uint8_t idx)
 uint8_t transmitDataLen = sizeof(transmitData) / sizeof(transmitData[0]);
 uint8_t barkerOne[11] = {1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0};
 uint8_t barkerZero[11] = {0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1};
-uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
+uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
+                        0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
 
 uint8_t barkerOneLen = sizeof(barkerOne) / sizeof(barkerOne[0]);
 uint8_t barkerZeroLen = sizeof(barkerZero) / sizeof(barkerZero[0]);
@@ -93,9 +104,10 @@ uint8_t preambleLen = sizeof(preamble) / sizeof(preamble[0]);
 
 // Wifi Packet Definition
 uint8_t packet3[24] = {0x48, 0x11, 0x3c, 0x00, DADDR, SADDR, DADDR, 0xf0, 0x36};
-uint8_t packet3_awake[24] = {0x48, 0x01, 0x8c, 0x00, DADDR, SADDR, DADDR, 0xf0, 0x36};
+uint8_t packet3_awake[24] = {0x48, 0x01, 0x8c, 0x00, DADDR,
+                             SADDR, DADDR, 0xf0, 0x36};
 
-bool firstTime = true;
+static bool firstTime = true;
 // int rssi_average = 0;
 uint8_t rssi_count = 0;
 
@@ -117,12 +129,14 @@ void printState(wlskStateHandle_t *stateHandle)
 
 void transmitNullSleep()
 {
-  esp_wifi_80211_tx(WIFI_IF_STA, packet3, sizeof(packet3), true); // Null STA will go to sleep
+  esp_wifi_80211_tx(WIFI_IF_STA, packet3, sizeof(packet3),
+                    true); // Null STA will go to sleep
 }
 
 void transmitNullAwake()
 {
-  esp_wifi_80211_tx(WIFI_IF_STA, packet3_awake, sizeof(packet3), true); // Null STA wiill stay awake
+  esp_wifi_80211_tx(WIFI_IF_STA, packet3_awake, sizeof(packet3),
+                    true); // Null STA wiill stay awake
 }
 
 void shiftNetworkLatency()
@@ -141,7 +155,7 @@ void shiftNetworkLatency()
 
 void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
 {
-  // printState(stateHandle);
+  printState(stateHandle);  // Debug: print out current state
   switch (stateHandle->state)
   {
   case GUARD:
@@ -150,6 +164,7 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
     {
       stateHandle->start = false;
       stateHandle->state = PREAMBLE;
+      Serial.printf("State set to PREAMBLE\r\n");
     }
     break;
   case PREAMBLE:
@@ -315,6 +330,7 @@ void restartTimeoutTimer()
 
 void setup()
 {
+  // Initialize the index locations
   stateHandle.barkerIdx = 0;
   stateHandle.txDataIdx = 0;
   stateHandle.state = GUARD;
@@ -331,12 +347,11 @@ void setup()
 
 void loop()
 {
-   continue_loop:
   // // Block on input from the Serial.
   if (firstTime && Serial.available())
   {
-
-    // Execute this the first time around. Don't reset until done transmitting
+    // Execute this the first time around. Don't reset until done
+    // transmitting
     firstTime = false;
 
     // Character on RX buffer, clear the buffer
@@ -351,13 +366,14 @@ void loop()
     {
       Serial.printf("Invalid Entry\r\n");
       firstTime = true;
-      goto continue_loop;
+      return;
     }
     // Wait until we find the 0xdeadbeefdead mac address
-    addr_found = false;
-    while (!addr_found)
+    ADDR_FOUND = false;
+    while (!ADDR_FOUND)
     {
-      // TODO: Put a timeout here so that we reset if we get start char but don't find address
+      // TODO: Put a timeout here so that we reset if we get start char but
+      // don't find address
       delay(1000);
       Serial.printf("Scanning for LSK service..\r\n");
     }
@@ -365,38 +381,40 @@ void loop()
     delay(1000);
 
     // Init the wifi again and start
-    mac2str(router_mac, addr1);
-    mac2str(ping_target_mac, addr3);
+    mac2str(ROUTER_MAC, addr1);
+    mac2str(PING_TARGET_MAC, addr3);
     Serial.print(addr1);
     Serial.print("\t");
     Serial.print(addr2);
     Serial.print("\t");
     Serial.print(addr3);
     Serial.println("\t\t");
-    addr_found = 0;
-    wifi_sniffer_main(ping_target_mac);
+    ADDR_FOUND = 0;
+    wifi_sniffer_main(PING_TARGET_MAC);
 
     // Update Packets
-    memcpy(&packet3[4 + 0 * 6], &router_mac, 6);
-    memcpy(&packet3[4 + 1 * 6], &ping_target_mac, 6);
-    memcpy(&packet3[4 + 2 * 6], &router_mac, 6);
+    memcpy(&packet3[4 + 0 * 6], &ROUTER_MAC, 6);
+    memcpy(&packet3[4 + 1 * 6], &PING_TARGET_MAC, 6);
+    memcpy(&packet3[4 + 2 * 6], &ROUTER_MAC, 6);
 
-    memcpy(&packet3_awake[4 + 0 * 6], &router_mac, 6);
-    memcpy(&packet3_awake[4 + 1 * 6], &ping_target_mac, 6);
-    memcpy(&packet3_awake[4 + 2 * 6], &router_mac, 6);
+    memcpy(&packet3_awake[4 + 0 * 6], &ROUTER_MAC, 6);
+    memcpy(&packet3_awake[4 + 1 * 6], &PING_TARGET_MAC, 6);
+    memcpy(&packet3_awake[4 + 2 * 6], &ROUTER_MAC, 6);
 
+    Serial.printf("Starting Transmission\r\n");
     stateHandle.start = true;
-    beacon_detected = false;
+    BEACON_DETECTED = false;
     Serial.printf("Starting State Machine\r\n");
   }
 
-  if (beacon_detected || timeout)
+  if (BEACON_DETECTED || timeout)
   {
+    Serial.printf("Beacon Detected\r\n");
     // ledToggle();
-    if (beacon_detected)
+    if (BEACON_DETECTED)
     {
       restartTimeoutTimer();
-      beacon_detected = 0; // reset and wait for next beacon frame
+      BEACON_DETECTED = 0; // reset and wait for next beacon frame
       timeoutCount = 0;
     }
     if (timeout)
@@ -413,7 +431,7 @@ void loop()
     if (rssi_count++ >= 5)
     {
       rssi_count = 0;
-      Serial.printf("RSSI: %d\n", rssi_value);
+      Serial.printf("RSSI: %d\n", RSSI_VALUE);
     }
   }
 }

@@ -2,10 +2,10 @@
     "version": 2.1,
 
     "rx_parameters": {
-        "rx_interface":"eno1",
+        "rx_interface":"enp0s31f6",
         "rx_ping_interval": 0.001,
         "rx_timeout_limit": 300,
-        "pkt_target_ip": "192.168.0.156",
+        "pkt_target_ip": "192.168.0.246",
         "pkt_src_addr": "DE:AD:BE:EF:DE:AD",
         "pkt_source_port": 25565,
         "pkt_dest_port": 80
@@ -23,9 +23,9 @@
     "utilities": {
         "save_mode": true,
         "save_window": 100,
-        "savefile_num": 3,
+        "savefile_num": 4,
         "super_save": false,
-        "plot_directory": "/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/source/rx_v2/rx_test_plots/newplots/",
+        "plot_directory": "source/rx_v2/rx_test_plots/newplots/",
         "noise_attention": 10,
         "grab_timeout": 0.1,
         "use_beacon_sniffs": false,

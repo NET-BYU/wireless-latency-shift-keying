@@ -16,11 +16,7 @@ def signal_handler(processes, signal, frame):
 
 if __name__ == "__main__":
     
-    config_path = "/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/config/wlsk-config-2-1.json"
-    new_rec = WlskReceiver(config_path,True,l.DEBUG,doGraphs=False)
-    
-    signal_handler_with_processes = partial(signal_handler, new_rec.processes)
-    signal.signal(signal.SIGINT, signal_handler_with_processes)
+    new_rec = WlskReceiver("config/wlsk-config-2-1.json",True,l.DEBUG)
     
     new_rec.start_receiver()
     
@@ -28,3 +24,4 @@ if __name__ == "__main__":
     
     # new_rec.stop_receiver()
     
+    # print(message)

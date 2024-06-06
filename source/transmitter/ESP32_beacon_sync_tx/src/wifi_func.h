@@ -15,6 +15,8 @@
 
 const float STRAP_LOSS[4] = {0.8, 0.6, 0.4, 0.2};
 
+static bool LOOP_INIT = false;
+
 static wifi_country_t wifi_country = {
     .cc = "US", .schan = 1, .nchan = 13};  // Most recent esp32 library struct
 
@@ -136,7 +138,11 @@ esp_err_t event_handler(void *ctx, system_event_t *event) { return ESP_OK; }
 void wifi_sniffer_init(void) {
   nvs_flash_init();
   tcpip_adapter_init();
-  ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
+  if (!LOOP_INIT)
+  {
+    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
+    LOOP_INIT = true;
+  }
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));

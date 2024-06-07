@@ -490,7 +490,7 @@ class WlskReceiver:
                 self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.SYNC_REQ, request_time))
                 self.__request_tx.send((self.SYNC_REQ, request_time))
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                if stack_in == None: break 
+                if stack_in == None: break # The packet manager died or something.
                 
                 if self.save_all_windows: self.__save_window(stack_in)
                 sync_word_found, _ = self.__process_window(stack_in)
@@ -509,7 +509,7 @@ class WlskReceiver:
                 self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.MSG_REQ, request_time))
                 self.__request_tx.send((self.MSG_REQ, request_time))
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                if stack_in == None: break
+                if stack_in == None: break # If he died, he died
             
                 if self.save_all_windows: self.__save_window(stack_in)
                 _ , message = self.__process_window(stack_in)
@@ -534,8 +534,12 @@ class WlskReceiver:
     
     def __find_noise_floor(self,stack) -> int:
         '''finds the noise floor, as in the normal amount of packets that get buffered during untouched transmission.'''
+
+        # Create the RTS array
         rts_array = np.array([stack[1].get(i, -0.1) for i in range(max(stack[1].keys()) + 1)])
         toa_dist, _ = self.utils.toa_distribution(rts_array)
+
+        # Create the noise distribution number of receoved pkts per ms (noise floor)
         noise_distribution = [item for item in toa_dist if item > 0]
         noise_floor = np.mean(noise_distribution)
         self.l.info("DECODE\t- noise floor was set to {}".format(noise_floor))
@@ -546,6 +550,7 @@ class WlskReceiver:
         rts_array = np.array([stack[1].get(i, -0.1) for i in range(max(stack[1].keys()) + 1)])
         toa_dist, _ = self.utils.toa_distribution(rts_array)
         
+        # Decode message with received distribution of chips
         found_sync_word, return_bits = self.__decode_message(toa_dist)
 
         return found_sync_word, return_bits

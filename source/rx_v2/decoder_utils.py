@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import csv
 import os
+from scipy.signal import correlate as corr
 
 class WlskDecoderUtils:
     def __init__(self):
@@ -92,7 +93,7 @@ class WlskDecoderUtils:
                 for bit in upscaled_zero:
                     code_upscaled.append(bit)
 
-        conv = np.correlate(var_data,code_upscaled,"full")
+        conv = corr(var_data,code_upscaled,"full")
 
         return conv-conv.mean()
     

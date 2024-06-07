@@ -16,12 +16,14 @@ def signal_handler(processes, signal, frame):
 
 if __name__ == "__main__":
     
-    new_rec = WlskReceiver("config/wlsk-config-2-1.json",True,l.DEBUG)
+    config_path = sys.argv[1]
+    
+    new_rec = WlskReceiver(config_path,True,l.DEBUG)
     
     new_rec.start_receiver()
     
-    # message = new_rec.block_until_message()
+    message = new_rec.block_until_message()
     
-    # new_rec.stop_receiver()
+    new_rec.stop_receiver()
     
-    # print(message)
+    print(message)

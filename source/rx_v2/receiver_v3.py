@@ -1,9 +1,8 @@
 from scapy.all import Ether, IP, TCP, Dot11
 from decoder_utils import WlskDecoderUtils
-from supergrapher import SuperGrapher
-from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 import matplotlib.pyplot as plt
+from enum import Enum, auto
 import multiprocessing as mlti
 from scapy.all import *
 import logging as l
@@ -62,8 +61,8 @@ class WlskReceiver:
         self.msg_output_dir:    string  = None
         self.DELETE_REQ:        int     = -999
         self.plot_num:          int     = 0
+        self.WINDEX:            int     = 0
         self.utils                      = WlskDecoderUtils()
-        self.sg                         = SuperGrapher()
         
         # Other variables to be used        | Description of the Variable           | Units
         self.rx_interface:      string      # wired or wireless, for sending pings  
@@ -73,9 +72,9 @@ class WlskReceiver:
         self.src_addr:          string      # packet address for TX to detect pings 
         self.sport:             int         # port that the receiver listens with   
         self.dport:             int         # should always be port 80              
-        self.sync_word:         list        # list of bits making up sync word      
+        self.SYNC_WORD:         list        # list of bits making up sync word      
         self.SYNC_WORD_LEN:     int         # length of the sync word; auto-gen     | bits
-        self.barker:            list        # list of bits making up the barker code
+        self.BARKER_WORD:            list        # list of bits making up the barker code
         self.BARK_WORD_LEN:     int         # length of the barker code; auto-gen   | bits
         self.PACKET_SIZE:       int         # length of the packets expected to get | bits
         self.DEC_TIMEOUT:       int         # for the decoder requests; ignore this | seconds
@@ -146,19 +145,19 @@ class WlskReceiver:
                 self.dport              = rxp["pkt_dest_port"]
                 
                 dec = config_data["decoding"]
-                self.sync_word          = dec["sync_word"]
-                
-                self.barker             = dec["barker_code"]
-                
+                self.SYNC_WORD          = dec["sync_word"]
+                self.BARKER_WORD        = dec["barker_code"]
                 self.PACKET_SIZE        = dec["packet_length"]
                 self.DEC_TIMEOUT        = dec["decoder_timeout"]
                 self.WINDOW_EDGE        = dec["window_edge"]
                 self.WINDOW_ROLLOVER    = dec["window_rollover"]
+                self.corr_std_dev       = dec["corr_std_dev"]
                 
                 util = config_data["utilities"]
                 self.save_mode          = util["save_mode"]
                 self.SAVE_WINDOW        = util["save_window"]
                 self.SAVEFILE           = util["savefile_num"]
+                self.save_all_windows        = util["super_saver"]
                 self.grab_timeout       = util["grab_timeout"]
                 self.plot_dir           = util["plot_directory"]
                 self.NOISE_ATTN         = util["noise_attention"]
@@ -169,11 +168,10 @@ class WlskReceiver:
                 self.num_of_sniffs      = util["num_of_sniffs"]
                 
                 '''some of the variables are crafted to reduce config size.'''
-                self.SYNC_WORD_LEN      = len(self.sync_word)
-                self.BARK_WORD_LEN      = len(self.barker)
+                self.SYNC_WORD_LEN      = len(self.SYNC_WORD)
+                self.BARK_WORD_LEN      = len(self.BARKER_WORD)
                 self.SYNC_REQ           = (self.SYNC_WORD_LEN * 0.102) + self.WINDOW_EDGE
                 self.MSG_REQ            = self.SYNC_REQ + (self.PACKET_SIZE * self.BARK_WORD_LEN * 0.102)
-                self.sg.set_directory(self.plot_dir)
                 
         except ValueError:
             self.l.error("HEAD\t- couldn't initialize because the config file version did not match.")
@@ -366,7 +364,7 @@ class WlskReceiver:
 
             # both sync and msg requests are the same thing, just with a different window length
             if request != self.DELETE_REQ and ready:
-                self.l.info("SAVER\t- RSP: window ({}) {}".format(request,Rtime))
+                self.l.info("MANAGE\t- RSP: window ({}) {} {}".format(self.WINDEX,request,Rtime))
                 # calculate 'lowest' packet, or first packet considered in the window
                 lpkt = self.__determine_packet_index(pkt_list[1],Rtime)
                 outgoing_packets = [{k: v for k, v in d.items() if lpkt <= k <= hpkt} for d in pkt_list]
@@ -413,6 +411,7 @@ class WlskReceiver:
     - Maybe just send a delete request for the data everytime that the sync word fails? so that it gets less clogged. Need
     to compare the amount of time it takes to do a big vs. little delete then to see if that takes too much time w/ extra requests.
     - I wiped out the sync word function and the decode function. They need to be redone.
+    - actually use the noise floor calculations?
     '''  
     def _request_and_decode(self) -> None:
         '''Request and Decode Process for WLSK
@@ -429,15 +428,7 @@ class WlskReceiver:
         This process cannot start until after the __global_start event. It can be killed 
         with the __global_stop event.
         '''
-        self.__global_start.wait()
-        self.l.info("HEAD\t- Beginning decoder process")
-        
-        # decoder likes to have 1 or 2 packets already available for some reason
-        time.sleep(0.5)
-        
-        # start the first window at around the time of the first ping
-        request_time = self.__global_time.value
-        
+
         def listen_cautious(import_queue: mlti.Queue,stop_event: mlti.Event) -> list:
             '''a simple way of listening for responses on the queue while not blocking (as hard).'''
             while not stop_event.is_set():
@@ -447,89 +438,96 @@ class WlskReceiver:
                 except queue.Empty:
                     continue
             return None
+
+        class dState(Enum):
+            '''decoder state machine states'''
+            INIT = auto()
+            FIND_SYNC_WORD = auto()
+            HEAR_MSG = auto()
+            DELETE_DATA = auto()
+
+        self.__global_start.wait()
+        self.l.info("HEAD\t- Beginning decoder process")
+        # decoder likes to have 1 or 2 packets already available for some reason
+        time.sleep(0.5)
+        # start the first window at the time of the first ping
+        request_time = self.__global_time.value
         
-        # 0th request: request a window to listen to the raw 'noise'; becomes the save window if save mode is enabled (debugging utility)
-        if self.save_mode:
-            init_request = (self.SAVE_WINDOW,request_time)
-        else:
-            init_request = (self.NOISE_ATTN, request_time)
-            
-        self.l.info("DECODE\t- REQ: window ({}) {}".format(init_request[0],init_request[1]))
-        self.__request_tx.send(init_request)
-        # after sending a request, the next thing to do is always listen for the window response
-        stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-        if not stack_in == None:
-            if self.save_mode:
-                self.__save_window_to_file(stack_in)
-                self.__global_stop.set()
-                time.sleep(3)
-                self.l.info("HEAD\t- Save mode finished. Quitting...")
-                return
-            # use the max buffered packets to determine the noise floor
-            self.__global_noise = self.__find_noise_floor(stack_in)
-        
-        # move the request time up to the length of data used
-        request_time += self.NOISE_ATTN
-        
-        # delete the data used in the noise calculations
-        self.l.info("DECODE\t- REQ: delete {}".format(request_time))
-        self.__request_tx.send((self.DELETE_REQ, request_time))
-        stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-        if not stack_in == None and stack_in[0] != 0:
-            self.__global_stop.set()
-        
-        # this tells the system when to throw out old data
+        STATE = dState.INIT
         window_rolls = 0
         
         while not self.__global_stop.is_set():
-            try:
-                # clear the queue when there is a bunch of extra silence
-                if window_rolls >= self.WINDOW_ROLLOVER:
-                    window_rolls = 0
-                    self.l.info("DECODE\t- REQ: rollover clear")
-                    self.__request_tx.send((self.DELETE_REQ, request_time))
-                    stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                    if (stack_in == None or stack_in[0] != 0): break 
+            if STATE == dState.INIT:
+                # Request example: first, request a window. In this case either the save window or the noise window
+                if self.save_mode:
+                    init_request = (self.SAVE_WINDOW,request_time)
+                else:
+                    init_request = (self.NOISE_ATTN, request_time)
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX,init_request[0],init_request[1]))
+                self.__request_tx.send(init_request)
+
+                # after sending a request, the next thing to do is always listen for the window response
+                stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
+                # check that the response and process it
+                if not stack_in == None:
+                    if self.save_mode:
+                        self.__save_window_to_file(stack_in)
+                        self.__global_stop.set()
+                        time.sleep(3)
+                        self.l.info("HEAD\t- Save mode finished. Quitting...")
+                        return
+                    else:
+                        if self.save_all_windows: self.__save_window(stack_in)
+                        self.__global_noise = self.__find_noise_floor(stack_in)
+                else:
+                    break # if you get a null response, it means the packet manager died or something.
                 
-                # First request: ask for a sync word sized window
-                self.l.info("DECODE\t- REQ: window ({}) {}".format(self.SYNC_REQ, request_time))
+                # change the request time for the next operation and the jump to that state
+                request_time += self.NOISE_ATTN
+                STATE = dState.DELETE_DATA
+                
+            elif STATE == dState.FIND_SYNC_WORD:
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.SYNC_REQ, request_time))
                 self.__request_tx.send((self.SYNC_REQ, request_time))
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                # if you ever don't get a message its because __global.stop so just leave
                 if stack_in == None: break 
-
-                # search for the sync word in the window
-                self.__debug_stack(stack_in)
-                sunk = self.__find_sync_word(stack_in)
                 
-                if sunk:
-                    # delete request will be sent anyways
+                if self.save_all_windows: self.__save_window(stack_in)
+                sync_word_found, _ = self.__process_window(stack_in)
+                
+                if sync_word_found:
                     window_rolls = 0
-                    
-                    # Second request: starts at the same time, but is long enough for a full message to be inside
-                    self.l.info("DECODE\t- REQ: window ({}) {}".format(self.MSG_REQ, request_time))
-                    self.__request_tx.send((self.MSG_REQ, request_time))
-                    stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                    if stack_in == None: break
-                    
-                    # decode that message now you found it
-                    message = self.__decode_message(stack_in)
-                    self.__message_queue.put(message)
-                    
-                    # Third request: flush the data that was in the manager so it doesn't get cloggy :(
-                    self.l.info("DECODE\t- REQ: delete {}".format(request_time))
-                    self.__request_tx.send((self.DELETE_REQ, request_time + self.MSG_REQ))
-                    stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
-                    if (stack_in == None or stack_in[0] != 0): break
-
+                    STATE = dState.HEAR_MSG
                 else:
-                    # if you didn't find the sync word scroll 1 second - the windows are oversize so its fine
-                    request_time += 1
                     window_rolls += 1
-                    
-            except Exception as e:
-                self.l.error("DECODE\t- an exception occured: {}".format(e))
+                    request_time += 1
+                    if window_rolls >= self.WINDOW_ROLLOVER:
+                        window_rolls = 0
+                        STATE = dState.DELETE_DATA
+                                
+            elif STATE == dState.HEAR_MSG:
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.MSG_REQ, request_time))
+                self.__request_tx.send((self.MSG_REQ, request_time))
+                stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
+                if stack_in == None: break
+            
+                if self.save_all_windows: self.__save_window(stack_in)
+                _ , message = self.__process_window(stack_in)
+                self.__message_queue.put(message)
+
+                request_time += self.MSG_REQ
+                STATE = dState.DELETE_DATA
+            
+            elif STATE == dState.DELETE_DATA:
+                self.l.info("DECODE\t- REQ: delete {}".format(request_time))
+                self.__request_tx.send((self.DELETE_REQ, request_time))
+                stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
+                if not stack_in == None and stack_in[0] != 0:
+                    self.__global_stop.set()   
                 
+                # you don't need to move the request time on a delete becuase it deletes backwards in time.
+                STATE = dState.FIND_SYNC_WORD
+        
         self.__global_stop.set()
         self.l.info("HEAD\t- ending decoder process")
         return
@@ -541,44 +539,16 @@ class WlskReceiver:
         noise_distribution = [item for item in toa_dist if item > 0]
         noise_floor = np.mean(noise_distribution)
         self.l.info("DECODE\t- noise floor was set to {}".format(noise_floor))
-        
-        # plot_dir = "/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/source/rx_v2/rx_test_plots"
-        # # Plotting the results
-        # plt.scatter(range(0,len(noise_distribution)), noise_distribution, color='blue', label='Original data')
-        # plt.xlabel('Time (ms)')
-        # plt.ylabel('Values (x{})'.format(len(noise_distribution)))
-        # plt.legend()
-        # plt.savefig(os.path.join(plot_dir,"noise{}.png".format(self.plot_num)),dpi=600)
-        # plt.close()
-        
-        # it = 1
-        # while len(noise_distribution) > 0:
-        #     print("there are {} with at least {}".format(len(noise_distribution),it))
-        #     noise_distribution = [item for item in toa_dist if item > it]
-        #     it += 1
-        
         return noise_floor
 
-    # TODO: This does not actually work? It still finds the sync word even on blank t-lines maybe
-    def __find_sync_word(self,stack: list,__force_show = False) -> bool:
-        '''determines whether or not a WLSK sync word exists given a toa array in time. Returns true or false'''
-        
-        time.sleep(5)
-        
-        return False
-    
-    # TODO: This does not exist
-    def __decode_message(self,stack: list) -> list:
-        '''decodes a WLSK message from a toa array in time. returns a list of bits'''
-        plot_dir = "/home/enas2001/Documents/WLSK_tests/wireless-latency-shift-keying/source/rx_v2/rx_test_plots"
-        
+    def _process_window(self,stack: list) -> list:
+        '''decodes a WLSK message from a toa array in time. returns a list of bits'''        
         rts_array = np.array([stack[1].get(i, -0.1) for i in range(max(stack[1].keys()) + 1)])
         toa_dist, _ = self.utils.toa_distribution(rts_array)
         
-        return_bits = self.__decode_single_test(toa_dist= toa_dist, test_dir = plot_dir, test_num = 0, rtt_setup = stack[2])
-        
-        self.l.debug("message received: {}".format(return_bits))
-        return return_bits
+        found_sync_word, return_bits = self.__decode_message(toa_dist)
+
+        return found_sync_word, return_bits
     
     def __determine_packet_index(self, item_list: list, threshold: float) -> int:
         '''determines packet indexing for creating windows of time. returns an integer index.'''
@@ -591,97 +561,74 @@ class WlskReceiver:
             highest_key = key
         return highest_key
     
-    def __what_the_plot(self, directory: string, toa_dist: list, xcorr: np.ndarray, show: bool=True) -> None:
-        '''optional plotter for diagnostic information. Not used in the receiver main code.'''
-        
-        background_color = '#A9A9A9'
-        
-        fig = plt.figure(figsize=(15,15), facecolor=background_color)
-        fig.suptitle("Results {} from pinging {}".format(self.plot_num, self.target_ip))
-        
-        ax1 = fig.add_subplot(3,1,1, facecolor=background_color)
-        ax1.title.set_text("Received packets per 1ms Interval")
-        ax1.plot(toa_dist,color='black',linewidth=0.5)
-        
-        ax2 = fig.add_subplot(3,1,2, facecolor=background_color)
-        ax2.plot(xcorr,color='black',linewidth=1)
-        ax2.hlines([xcorr.std()*2,xcorr.std()*-2],*ax2.get_xlim())
-        ax2.title.set_text("Sync word correlation")
-
-        plt.savefig(os.path.join(directory,"results{}.png".format(self.plot_num)),dpi=600)
-        if show:
-            plt.show()
-        
-        self.plot_num += 1
-        plt.close(fig)
-
-    def __debug_stack(self, stack):
-        self.l.debug("average rtt: {}".format(sum(stack[2].values()) / len(stack[2])))
-        return
-    
     # TODO: This needs to go into the other one, I just don't wanna do it now.
-    def __decode_single_test(self, toa_dist, test_dir = None, test_num = 0, rtt_setup = []):
-        toa_dist = toa_dist[0:]
+    def __decode_message(self, toa_dist) -> list:
+        found_sync_word = False
         bit_sequence = []
-        
-        xcorr_sync = self.utils.correlate(raw_data=toa_dist, code=self.sync_word,window_size=75)
+        # find the sync word in the raw data 
+        xcorr_sync = self.utils.correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
 
         # Generate Cross Corelation of Barker Codes with the Received Chips 
-        self.barker = [1,1,1,-1,-1,-1,1,-1,-1,1,-1]
-        xcorr_barker = self.utils.correlate(raw_data=toa_dist, code=self.barker,window_size=75)
+        xcorr_barker = self.utils.correlate(raw_data=toa_dist, code=self.BARKER_WORD,window_size=75)
 
         # Find the first peak of sync word xcorr - this should be the sync word
-        cutoff = 1000
+        cutoff = self.SYNC_REQ #10000 
 
-        sync_indices = np.where(xcorr_sync[:cutoff] > xcorr_sync.std()*2)[0]
+        sync_indices = np.where(xcorr_sync[:cutoff] > xcorr_sync.std()*self.corr_std_dev)[0]
 
-        self.l.info("threshold for sync detect: {}".format(xcorr_sync.std()*2))
-        self.l.info("cutoff is {}".format(cutoff))        
-        
+        self.l.debug("DECODE\t- threshold for sync detect: {}".format(xcorr_sync.std()*self.corr_std_dev))
+        self.l.debug("DECODE\t- cutoff is {}".format(cutoff))
+
         if len(sync_indices) == 0:
-            self.l.info("Could not find the Sync Word\n")
-        
-        try:
+            print("DECODE\t- Could not find the Sync Word\n")
+            return found_sync_word, bit_sequence
+        else:
+            found_sync_word = True
+            
+        try:    
             sync_start = sync_indices[0] if xcorr_sync[sync_indices[0]] > xcorr_sync[sync_indices[np.argmax(xcorr_sync[sync_indices])]]*.5 else sync_indices[np.argmax(xcorr_sync[sync_indices])]
-            self.l.info("Using Sync Word idx: {}".format(sync_start))
-
+            self.l.debug("DECODE\t- Using Sync Word idx: {}".format(sync_start))
+            # Get Peaks on the x correlation 
             ones, _ = find_peaks(xcorr_barker, height = 500)
+            # print(f"{ones[0]} {ones[2]} {ones[4]}")
             zeroes, _ = find_peaks(xcorr_barker * -1, height = 500)
-                
+            
             # Calculate Bit Decision X-values based on the sync word location.
             timed_xcorr_bit_windows = []
             ori_bit_windows = []
-            for bit in range(1, self.SYNC_WORD_LEN+1):
-                xval = sync_start + self.BARK_WORD_LEN * bit+5*bit
+            for bit in range(1, self.PACKET_SIZE+1):
+                xval = sync_start + self.BARK_WORD_LEN * 102 * bit+5*bit
                 if xval < len(xcorr_barker):
                     timed_xcorr_bit_windows.append(xval)
                     ori_bit_windows.append(xval)
             # Finally, make a bit decision at each of the bit window locations. 
+            
             bit_x_vals = []
             for index in range(len(timed_xcorr_bit_windows)):
                 # Handle case where we get off and are right next to a peak. 
                 grace = 200 if index == 0 else 150
                 point_to_evaluate = timed_xcorr_bit_windows[index]
                 nearby_options = np.arange(point_to_evaluate-grace, point_to_evaluate+grace)
-
-                # find the largest peak not just a peak
                 largest_index_value_pair = [abs(xcorr_barker[point_to_evaluate]),point_to_evaluate, 200]
-                
                 if index == 0:
                     for option in nearby_options:
                         if (option != point_to_evaluate) and (option in ones ):
+                            # print("HEAD\t- adjusting the point from {} to {}".format(x, option))
+                            # point_to_evaluate = option
                             if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/1.8)) or (abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]):
                                 
+                            # if abs(xcorr_barker[option]) > largest_index_value_pair[0] or (abs(point_to_evaluate -option) < largest_index_value_pair[2] and abs(xcorr_barker[option]) > 200):
                                 largest_index_value_pair[0] = abs(xcorr_barker[option])
                                 largest_index_value_pair[1] = option
                                 largest_index_value_pair[2] = abs(point_to_evaluate -option)
-
+                                # print("HEAD\t- changing high index:",index,"to",largest_index_value_pair)
+                            # break
                         elif (option != point_to_evaluate) and (option in zeroes ):
                             if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/2)) or abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]:
+                            # if abs(xcorr_barker[option]) > largest_index_value_pair[0]:
                                 largest_index_value_pair[0] = abs(xcorr_barker[option])
                                 largest_index_value_pair[1] = option
                                 largest_index_value_pair[2] = abs(point_to_evaluate -option)
-
                 elif abs(xcorr_barker[point_to_evaluate]) < 200:
                     
                     check_index = np.argmax(np.abs(xcorr_barker[nearby_options]))+nearby_options[0]
@@ -689,12 +636,12 @@ class WlskReceiver:
                         largest_index_value_pair[1] = check_index
                     adjustment = largest_index_value_pair[1]-timed_xcorr_bit_windows[index]
                     timed_xcorr_bit_windows[index] += adjustment
-                    print(index, adjustment, timed_xcorr_bit_windows[index])
+                    # print(index, adjustment, timed_xcorr_bit_windows[index])
                     for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
                         timed_xcorr_bit_windows[adjust_index] += int(adjustment)
-
                 point_to_evaluate = largest_index_value_pair[1] # get the index that we found else it is still x
                 # adjust where we are sampling
+                
                 
                 adjustment = point_to_evaluate-timed_xcorr_bit_windows[index]
                 if index==0:
@@ -709,45 +656,22 @@ class WlskReceiver:
                     bit_sequence.append(0)
 
                 bit_x_vals.append(point_to_evaluate)
-            
-            self.l.info("Eval X coordinates: {}\n".format(bit_x_vals))
-        except Exception as e:
-            self.l.info("the dude failed")
-        # Generate Plot showing raw data
-        self.plot_noisy_noise(test_num,toa_dist,xcorr_sync,xcorr_barker,rtt_setup,test_dir,bg_color="#A9A9A9")
-        self.l.info("me I plot.")
-        return bit_sequence
+            self.l.debug("DECODE\t- Eval X coordinates: {}\n".format(bit_x_vals))
+        except Exception:
+            pass
 
-    def plot_noisy_noise(self,target_ip,toa_dist,sync_corr,barker_corr,rtt_array,plot_dir,bg_color="#A9A9A9"):
-        '''optional plotter for diagnostic information. Not used in the receiver main code.'''
-        result_list = [rtt_array[key] for key in sorted(rtt_array.keys())]
-        
-        
-        fig = plt.figure(figsize=(25,25), facecolor=bg_color)
-        fig.suptitle("Results from pinging {}".format(target_ip))
-        
-        ax1 = fig.add_subplot(2,2,1, facecolor=bg_color)
-        ax1.title.set_text("Received packets per 1ms Interval")
-        ax1.plot(toa_dist,color='black',linewidth=0.5)
-        
-        # ax2 = fig.add_subplot(2,2,2, facecolor=bg_color)
-        # ax2.plot(sync_corr,color='black',linewidth=1)
-        # ax2.hlines([sync_corr.std()*2,sync_corr.std()*-2],*ax2.get_xlim())
-        # ax2.title.set_text("Sync word correlation")
-        
-        # ax3 = fig.add_subplot(2,2,3, facecolor=bg_color)
-        # ax3.plot(barker_corr,color='black',linewidth=1)
-        # ax3.hlines([barker_corr.std()*2,barker_corr.std()*-2],*ax2.get_xlim())
-        # ax3.title.set_text("Barker word correlation")
-        
-        # ax4 = fig.add_subplot(2,2,4, facecolor=bg_color)
-        # ax4.title.set_text("rtt measurements")
-        # ax4.plot(result_list,color='black',linewidth=0.5)
+        return found_sync_word, bit_sequence
 
-        plt.savefig(os.path.join(plot_dir,"noise_results.png"),dpi=600)
-        plt.close(fig)
-        return
-    
+    def __save_window(self,stack):
+        path = os.path.join(self.plot_dir, "saved_data/ss{}.csv".format(self.WINDEX))
+        self.WINDEX += 1
+        with open(path,mode='w',newline='') as file:
+            writer = csv.writer(file)
+            common_keys = sorted(set(stack[0]).intersection(*stack[1:]))
+            for row in stack:
+                to_write = [row.get(key,'') for key in common_keys]
+                writer.writerow(to_write)
+        
     def __save_window_to_file(self,stack):
         path = os.path.join(self.plot_dir, "saved_data/test_result_{}.csv".format(self.SAVEFILE))
         

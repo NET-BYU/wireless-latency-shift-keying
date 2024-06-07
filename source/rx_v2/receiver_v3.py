@@ -1,6 +1,6 @@
 from scapy.all import Ether, IP, TCP, Dot11
 from decoder_utils import WlskDecoderUtils
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, correlate
 import matplotlib.pyplot as plt
 from enum import Enum, auto
 import multiprocessing as mlti

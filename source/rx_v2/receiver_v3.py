@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from enum import Enum, auto
 import multiprocessing as mlti
 from scapy.all import *
+import pandas as pd
 import logging as l
 import numpy as np
 import queue
@@ -460,6 +461,7 @@ class WlskReceiver:
             if STATE == dState.INIT:
                 # Request example: first, request a window. In this case either the save window or the noise window
                 if self.save_mode:
+                    self.l.info("HEAD\t- Running in Save Mode.")
                     init_request = (self.SAVE_WINDOW,request_time)
                 else:
                     init_request = (self.NOISE_ATTN, request_time)
@@ -543,9 +545,9 @@ class WlskReceiver:
         noise_distribution = [item for item in toa_dist if item > 0]
         noise_floor = np.mean(noise_distribution)
         self.l.info("DECODE\t- noise floor was set to {}".format(noise_floor))
-        return noise_floor
+        return 15
 
-    def _process_window(self,stack: list) -> list:
+    def __process_window(self,stack: list) -> list:
         '''decodes a WLSK message from a toa array in time. returns a list of bits'''        
         rts_array = np.array([stack[1].get(i, -0.1) for i in range(max(stack[1].keys()) + 1)])
         toa_dist, _ = self.utils.toa_distribution(rts_array)
@@ -566,18 +568,20 @@ class WlskReceiver:
             highest_key = key
         return highest_key
     
-    # TODO: This needs to go into the other one, I just don't wanna do it now.
     def __decode_message(self, toa_dist) -> list:
         found_sync_word = False
         bit_sequence = []
         # find the sync word in the raw data 
+        # print(type(toa_dist))
+        # compressed = pd.Series([2 if item < self.__global_noise else item for item in toa_dist ])
+        # print(type(compressed))
         xcorr_sync = self.utils.correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
 
         # Generate Cross Corelation of Barker Codes with the Received Chips 
         xcorr_barker = self.utils.correlate(raw_data=toa_dist, code=self.BARKER_WORD,window_size=75)
 
         # Find the first peak of sync word xcorr - this should be the sync word
-        cutoff = self.SYNC_REQ #10000 
+        cutoff = int(math.floor(self.SYNC_REQ) * 1000) #10000 
 
         sync_indices = np.where(xcorr_sync[:cutoff] > xcorr_sync.std()*self.corr_std_dev)[0]
 

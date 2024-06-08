@@ -78,13 +78,12 @@ class WlskDecoderUtils:
                     break
         return pd.Series(toa_dist), toa_dist_times
     
-    def correlate(self, raw_data, code,window_size):
+    def correlate(self, raw_data, code,window_size, width = 102,put_it_der = -1):
         var_data = raw_data.rolling(window=window_size).var().bfill()
         # print(var_data)
         code_upscaled = []
-        # Define an upscaled one 
-        upscaled_one = [1 for i in range(102)]
-        upscaled_zero = [-1 for i in range(102)]
+        upscaled_one = [1 if i < width else put_it_der for i in range(102)]
+        upscaled_zero = [put_it_der for i in range(102)]
         for bit in code:
             if bit == 1:
                 for bit in upscaled_one:
@@ -92,8 +91,8 @@ class WlskDecoderUtils:
             else:
                 for bit in upscaled_zero:
                     code_upscaled.append(bit)
-
-        conv = corr(var_data,code_upscaled,"full")
+        # print(code_upscaled)
+        conv = np.correlate(var_data,code_upscaled,"full")
 
         return conv-conv.mean()
     

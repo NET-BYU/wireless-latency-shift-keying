@@ -21,9 +21,16 @@ if __name__ == "__main__":
     new_rec = WlskReceiver(config_path,True,l.DEBUG)
     
     new_rec.start_receiver()
-    
-    message = new_rec.block_until_message()
-    
-    new_rec.stop_receiver()
-    
-    print(message)
+    if not new_rec.save_mode:
+        message = new_rec.block_until_message()
+        og_bits = [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1]
+        print(og_bits)
+        success = 0 
+        for i,bit in enumerate(message):
+            if message[i] == og_bits[i]:
+                success += 1
+        print(f"success rate: {success / len(message)}")
+        
+        new_rec.stop_receiver()
+        
+        print(message)

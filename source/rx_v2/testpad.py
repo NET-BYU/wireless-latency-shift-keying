@@ -21,7 +21,7 @@ if __name__ == "__main__":
     new_rec = WlskReceiver(config_path,True,l.DEBUG)
     
     new_rec.start_receiver()
-    if not new_rec.save_mode:
+    if not new_rec.windowFileMode:
         message = new_rec.block_until_message()
         og_bits = [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1]
         print(og_bits)
@@ -34,3 +34,7 @@ if __name__ == "__main__":
         new_rec.stop_receiver()
         
         print(message)
+
+
+
+# [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0]

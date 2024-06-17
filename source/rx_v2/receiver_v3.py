@@ -1,6 +1,7 @@
 from scapy.all import Ether, IP, TCP, Dot11
 from decoder_utils import WlskDecoderUtils
 from scipy.signal import find_peaks, correlate
+import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from enum import Enum, auto
 import multiprocessing as mlti
@@ -57,13 +58,15 @@ class WlskReceiver:
             self.l.addHandler(file_handler)
 
         # set up variables with required default values
-        self.doGraphs:          bool    = doGraphs
-        self.isInitalized:      bool    = False
-        self.msg_output_dir:    string  = None
-        self.DELETE_REQ:        int     = -999
-        self.plot_num:          int     = 0
-        self.WINDEX:            int     = 0
-        self.utils                      = WlskDecoderUtils()
+        self.doGraphs:          bool                = doGraphs
+        self.isInitalized:      bool                = False
+        self.msg_output_dir:    string              = None
+        self.DELETE_REQ:        int                 = -999
+        self.plot_num:          int                 = 0
+        self.WINDEX:            int                 = 0
+        self.utils:             WlskDecoderUtils    = WlskDecoderUtils()
+        self.liveplot:          animation           = None
+        self.livefig, self.liveax                   = plt.subplots(figsize=(15, 6))
         
         # Other variables to be used        | Description of the Variable           | Units
         self.rx_interface:      string      # wired or wireless, for sending pings  
@@ -75,7 +78,7 @@ class WlskReceiver:
         self.dport:             int         # should always be port 80              
         self.SYNC_WORD:         list        # list of bits making up sync word      
         self.SYNC_WORD_LEN:     int         # length of the sync word; auto-gen     | bits
-        self.BARKER_WORD:            list        # list of bits making up the barker code
+        self.BARKER_WORD:       list        # list of bits making up the barker code
         self.BARK_WORD_LEN:     int         # length of the barker code; auto-gen   | bits
         self.PACKET_SIZE:       int         # length of the packets expected to get | bits
         self.DEC_TIMEOUT:       int         # for the decoder requests; ignore this | seconds
@@ -85,7 +88,8 @@ class WlskReceiver:
         self.MSG_REQ:           float       # length of decoder requests for msgs   | seconds
         self.grab_timeout:      float       # timeout of the grab_message function  | seconds
         self.NOISE_ATTN:        int         # length of initial noise analysis      | seconds
-        self._doBeaconSniff:    bool        # ** this doesn't really work, but it might later **
+        self.livePlotEnabled:   bool        # enables the live rtt viewer; kinda sus
+        self.doBeaconSniff:     bool        # ** this doesn't really work, but it might later **
         self.beacon_interface:  string      # wireless only; listens for beacon packets
         self.beacon_ssid:       string      # name of the wifi beacon to listen for
         self.beacon_mac:        string      # MAC address of the beacon  to listen to
@@ -107,6 +111,7 @@ class WlskReceiver:
         self.__process_queue                  = mlti.Queue()
         self.__decoding_queue                 = mlti.Queue()
         self.__message_queue                  = mlti.Queue()
+        self.__liveplotfeed                   = mlti.Queue()
         self.__global_noise                   = mlti.Value('i',-1)
         self.__global_time                    = mlti.Value('d',-1.0)
         
@@ -121,6 +126,7 @@ class WlskReceiver:
         self.processes.append(mlti.Process(target= self._sniff_ping_packets))
         self.processes.append(mlti.Process(target= self._packet_manager))
         self.processes.append(mlti.Process(target= self._request_and_decode))
+        self.processes.append(mlti.Process(target= self._live_plot_utility))
         
         # attempt to load the initalizer. THIS DOES NOT CRASH ON FAIL. (Should it?)
         self.initialize(config_path)
@@ -155,14 +161,15 @@ class WlskReceiver:
                 self.corr_std_dev       = dec["corr_std_dev"]
                 
                 util = config_data["utilities"]
-                self.save_mode          = util["save_mode"]
+                self.windowFileMode     = util["window_file_mode"]
+                self.livePlotEnabled    = util["live_plot_enabled"]
                 self.SAVE_WINDOW        = util["save_window"]
                 self.SAVEFILE           = util["savefile_num"]
-                self.save_all_windows        = util["super_saver"]
+                self.saveAllWindows     = util["super_saver"]
                 self.grab_timeout       = util["grab_timeout"]
                 self.plot_dir           = util["plot_directory"]
                 self.NOISE_ATTN         = util["noise_attention"]
-                self._doBeaconSniff     = util["use_beacon_sniffs"]
+                self.doBeaconSniff     = util["use_beacon_sniffs"]
                 self.beacon_interface   = util["beacon_interface"]
                 self.beacon_ssid        = util["beacon_interface"]
                 self.beacon_mac         = util["beacon_MAC"]
@@ -400,6 +407,7 @@ class WlskReceiver:
                     pkt_list[2][pkt_num] = rtt
                 else:
                     pkt_list[2][pkt_num] = -.01
+                self.__liveplotfeed.put((pkt_num,rtt))
                 # only ask on incoming messages because otherwise the keys may not line up
                 if Rtime is not None and pkt_time - Rtime > request:
                     ready = True
@@ -460,7 +468,7 @@ class WlskReceiver:
         while not self.__global_stop.is_set():
             if STATE == dState.INIT:
                 # Request example: first, request a window. In this case either the save window or the noise window
-                if self.save_mode:
+                if self.windowFileMode:
                     self.l.info("HEAD\t- Running in Save Mode.")
                     init_request = (self.SAVE_WINDOW,request_time)
                 else:
@@ -472,14 +480,14 @@ class WlskReceiver:
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
                 # check that the response and process it
                 if not stack_in == None:
-                    if self.save_mode:
+                    if self.windowFileMode:
                         self.__save_window_to_file(stack_in)
                         self.__global_stop.set()
                         time.sleep(3)
                         self.l.info("HEAD\t- Save mode finished. Quitting...")
                         return
                     else:
-                        if self.save_all_windows: self.__save_window(stack_in)
+                        if self.saveAllWindows: self.__save_window(stack_in)
                         self.__global_noise = self.__find_noise_floor(stack_in)
                 else:
                     break # if you get a null response, it means the packet manager died or something.
@@ -494,7 +502,7 @@ class WlskReceiver:
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
                 if stack_in == None: break # The packet manager died or something.
                 
-                if self.save_all_windows: self.__save_window(stack_in)
+                if self.saveAllWindows: self.__save_window(stack_in)
                 sync_word_found, _ = self.__process_window(stack_in)
                 
                 if sync_word_found:
@@ -513,7 +521,7 @@ class WlskReceiver:
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
                 if stack_in == None: break # If he died, he died
             
-                if self.save_all_windows: self.__save_window(stack_in)
+                if self.saveAllWindows: self.__save_window(stack_in)
                 _ , message = self.__process_window(stack_in)
                 self.__message_queue.put(message)
 
@@ -671,7 +679,7 @@ class WlskReceiver:
 
         return found_sync_word, bit_sequence
 
-    def __save_window(self,stack):
+    def __save_window(self,stack) -> None:
         path = os.path.join(self.plot_dir, "saved_data/ss{}.csv".format(self.WINDEX))
         self.WINDEX += 1
         with open(path,mode='w',newline='') as file:
@@ -680,8 +688,9 @@ class WlskReceiver:
             for row in stack:
                 to_write = [row.get(key,'') for key in common_keys]
                 writer.writerow(to_write)
+        return
         
-    def __save_window_to_file(self,stack):
+    def __save_window_to_file(self,stack) -> None:
         path = os.path.join(self.plot_dir, "saved_data/test_result_{}.csv".format(self.SAVEFILE))
         
         with open(path,mode='w',newline='') as file:
@@ -690,4 +699,39 @@ class WlskReceiver:
             for row in stack:
                 to_write = [row.get(key,'') for key in common_keys]
                 writer.writerow(to_write)
+        return
+    
+    def _live_plot_utility(self) -> None:
+        if not self.livePlotEnabled:
+            return
+        self.__global_start.wait()
+        time.sleep(0.5)
+        x_data = []
+        y_data = []
+        
+        scatter = self.liveax.scatter(x_data,y_data,s=1)
+        
+        def init():
+            self.liveax.clear()
+            self.liveax.set_xlim(0,10)
+            self.liveax.set_ylim(0,0.75)
+            return scatter,
+        
+        def update(frame):
+            while not self.__liveplotfeed.empty():
+                sequence_number, return_time = self.__liveplotfeed.get()
+                x_data.append(sequence_number)
+                y_data.append(return_time)
+                if len(x_data) > 1100:
+                    del x_data[:100]
+                    del y_data[:100]
+                scatter.set_offsets(np.c_[x_data,y_data])
+                self.liveax.set_xlim(x_data[0], max(1,sequence_number))
+                self.liveax.set_ylim(0,max(0.75,max(y_data)))
+                # time.sleep(0.001)
+            return scatter,
+            
+        ani = animation.FuncAnimation(self.livefig, update, init_func=init, blit=True, interval=100)
+        
+        plt.show()
         return

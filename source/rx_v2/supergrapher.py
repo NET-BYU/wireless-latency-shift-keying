@@ -5,6 +5,7 @@ from decoder_utils import WlskDecoderUtils
 from scipy.signal import find_peaks
 import pandas as pd
 import numpy as np
+import traceback
 import math as m
 import csv
 import sys
@@ -36,6 +37,9 @@ class SuperGrapher:
         self.test_points = []
         self.xcorr_tests = []
         self.other_point = 0
+        self.the_bits = []
+        self.the_sync_bits = []
+        self.name = ""
         return
     
     def set_directory(self,directory):
@@ -52,13 +56,15 @@ class SuperGrapher:
         size = 10 * length
         
         fig = plt.figure(figsize=(size,size))
-        fig.suptitle("Testing Results".format(self.plot_dir), fontsize=25)
+        fig.suptitle("Results {}".format(self.name), fontsize=25)
         
         ax1 = fig.add_subplot(length, length, 1)
         ax1.title.set_text('Received Packets per 1 ms Interval')
+        ax1.minorticks_on()
         ax1.plot(self.toa_dist, color='black', linewidth=0.5)
-        ax1.hlines([self.noise_floor],*ax1.get_xlim())
-        ax1.vlines(self.xcorr_tests,*ax1.get_ylim(),colors=["orange"],linestyle=':')
+        ax1.hlines([self.noise_floor],*ax1.get_xlim(),colors=["blue"])
+        ax1.vlines(self.the_bits,*ax1.get_ylim(),colors=["gray"],linestyle=':')
+        ax1.vlines(self.the_sync_bits,*ax1.get_ylim(),colors=["gold"],linestyle=':')
         ax1.vlines([self.sync_start],*ax1.get_ylim(),colors=["blue"])
         ax1.vlines([self.the_point],*ax1.get_ylim(),colors=["green"],linestyle=':')
         # ax1.vlines([self.sync_start+16+102.4*n for n in range(0,32)],*ax1.get_ylim(),colors=["red"],linestyle=':')
@@ -66,17 +72,20 @@ class SuperGrapher:
         
         ax2 = fig.add_subplot(length, length, 2)
         ax2.title.set_text('sync indices by index')
+        ax2.minorticks_on()
         ax2.scatter(range(0, len(self.sync_indices)), self.sync_indices, s=[3 for val in self.sync_indices],color='black')
-        ax2.vlines(self.test_points,*ax2.get_ylim(),colors=["orange"],linestyle=':')
-        ax2.vlines([self.other_point],*ax2.get_ylim(),colors=["blue"])            
+        # ax2.vlines(self.test_points,*ax2.get_ylim(),colors=["orange"],linestyle=':')
+        # ax2.vlines([self.other_point],*ax2.get_ylim(),colors=["blue"])            
         
         ax3 = fig.add_subplot(length,length,3)
         ax3.title.set_text("Sync word correlation")
+        ax3.minorticks_on()
         ax3.plot(self.xcorr_sync,color='black',linewidth=1)
         ax3.hlines([self.xcorr_sync.std()*self.sync_stdev,self.xcorr_sync.std()*-self.sync_stdev],*ax3.get_xlim())
-        ax3.vlines([0,self.cutoff],*ax3.get_ylim(),colors=["red"],linestyle=':')
+        ax3.vlines(self.the_bits,*ax3.get_ylim(),colors=["gray"],linestyle=':')
+        ax3.vlines(self.the_sync_bits,*ax3.get_ylim(),colors=["gold"],linestyle=':')
         ax3.vlines([self.the_point],*ax3.get_ylim(),colors=["green"],linestyle=':')
-        ax3.vlines(self.xcorr_tests,*ax3.get_ylim(),colors=["orange"],linestyle=':')
+        # ax3.vlines(self.xcorr_tests,*ax3.get_ylim(),colors=["orange"],linestyle=':')
         ax3.vlines([self.sync_start],*ax3.get_ylim(),colors=["blue"])
 
         # ax4 = fig.add_subplot(length, length, 4)
@@ -107,11 +116,14 @@ class SuperGrapher:
         
         ax8 = fig.add_subplot(length, length, 4)
         ax8.title.set_text('Rolling average of Packets per 1 ms Interval')
+        ax8.minorticks_on()
         ax8.plot(self.rolling_avg, color='black', linewidth=0.5)
-        ax8.hlines([self.total_avg],*ax8.get_xlim(), colors=["red"])
-        ax8.vlines([0,self.cutoff],*ax8.get_ylim(),colors=["red"],linestyle=':')
+        ax8.vlines(self.the_bits,*ax8.get_ylim(),colors=["gray"],linestyle=':')
+        ax8.vlines(self.the_sync_bits,*ax8.get_ylim(),colors=["gold"],linestyle=':')
+        # ax8.vlines([0,self.cutoff],*ax8.get_ylim(),colors=["red"],linestyle=':')
+        ax8.hlines([self.total_avg],*ax8.get_xlim(),colors=["red"])
         ax8.vlines([self.the_point],*ax8.get_ylim(),colors=["green"],linestyle=':')
-        ax8.vlines(self.xcorr_tests,*ax8.get_ylim(),colors=["orange"],linestyle=':')
+        # ax8.vlines(self.xcorr_tests,*ax8.get_ylim(),colors=["orange"],linestyle=':')
         ax8.vlines([self.sync_start],*ax8.get_ylim(),colors=["blue"])
         
         plt.show()
@@ -155,9 +167,9 @@ class SuperGrapher:
         bit_sequence = []
         found = False
         # find the sync word in the raw data 
-        self.compressed = pd.Series([2 if item < self.noise_floor else item for item in toa_dist ])
+        # self.compressed = pd.Series([2 if item < self.noise_floor else item for item in toa_dist ])
         self.xcorr_sync = util.correlate(raw_data=self.toa_dist, code=sync_word,window_size=75,width=corr_width,put_it_der=right_her)
-        self.xcorr_comp = util.correlate(raw_data=self.compressed, code=sync_word,window_size=75,width=corr_width,put_it_der=right_her)
+        # self.xcorr_comp = util.correlate(raw_data=self.compressed, code=sync_word,window_size=75,width=corr_width,put_it_der=right_her)
         # print(f"{xcorr_sync[0]} {xcorr_sync[2]} {xcorr_sync[4]}")
 
         # print(barker_code)
@@ -166,11 +178,11 @@ class SuperGrapher:
         # print(f"{xcorr_barker[0]} {xcorr_barker[2]} {xcorr_barker[4]}")
 
         # Find the first peak of sync word xcorr - this should be the sync word
-        self.cutoff = m.floor((31 * 102) + 8000) * 4
+        self.cutoff = len(toa_dist)#m.floor((31 * 102) + 8000) * 4
 
-        # self.sync_indices = np.where(self.xcorr_comp[:cutoff] > self.xcorr_comp.std()*self.sync_stdev)[0]
-        self.sync_indices = [item for item in self.xcorr_sync[:self.cutoff] if item > self.xcorr_sync.std()*self.sync_stdev]
-        self.sync_indices_comp = [item for item in self.xcorr_comp[:self.cutoff] if item > self.xcorr_comp.std()*self.sync_stdev]
+        self.sync_indices = np.where(self.xcorr_sync[:self.cutoff] > self.xcorr_sync.std()*self.sync_stdev)[0]
+        # self.sync_indices = [item for item in self.xcorr_sync[:self.cutoff] if item > self.xcorr_sync.std()*self.sync_stdev]
+        # self.sync_indices_comp = [item for item in self.xcorr_comp[:self.cutoff] if item > self.xcorr_comp.std()*self.sync_stdev]
         
         
         # print(f"da indices: {self.sync_indices}")
@@ -187,12 +199,20 @@ class SuperGrapher:
         try:
             print("---------------")
             self.determine_test_points()
-            for test_start in self.test_points:
+            for test_start in range(1):#range(41790,len(toa_dist)): #self.test_points:
                 bit_sequence = []
-                #self.sync_indices[0] if self.xcorr_sync[self.sync_indices[0]] > self.xcorr_sync[self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]]*.5 else self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]
+                # original sync start
+                self.sync_start = self.sync_indices[0] if self.xcorr_sync[self.sync_indices[0]] > self.xcorr_sync[self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]]*.5 else self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]
+                print(self.sync_start)
                 # self.sync_start = np.where(self.xcorr_sync == self.sync_indices[0])[0][0] #np.where(self.xcorr_sync == max(self.sync_indices))[0][0] 
                 # self.comp_start = np.where(self.xcorr_comp == self.sync_indices_comp[0])[0][0] #np.where(self.xcorr_comp == max(self.sync_indices_comp))[0][0]
-                self.sync_start = np.where(self.xcorr_sync == self.sync_indices[test_start])[0][0]
+                
+                # old sync start for test_start iters 
+                #self.sync_start = np.where(self.xcorr_sync == self.sync_indices[test_start])[0][0]
+                # self.sync_start = self.the_point - 5000 + test_start
+                # self.sync_start = test_start
+                
+                #old print statements
                 # print(f"comp start: {self.comp_start}")
                 # print("Using Sync Word idx: {}".format(self.sync_start))
                 # Get Peaks on the x correlation 
@@ -200,6 +220,7 @@ class SuperGrapher:
                 # print(f"{ones[0]} {ones[2]} {ones[4]}")
                 zeroes, _ = find_peaks(self.xcorr_barker * -1, height = 500)
             
+                # print("bucket number: {}".format(test_start))
                 # Calculate Bit Decision X-values based on the sync word location.
                 timed_xcorr_bit_windows = []
                 ori_bit_windows = []
@@ -263,6 +284,13 @@ class SuperGrapher:
                         bit_sequence.append(0)
 
                     bit_x_vals.append(point_to_evaluate)
+                self.the_bits = bit_x_vals   
+                differences = [bit_x_vals[i] - bit_x_vals[i-1] for i,_ in enumerate(bit_x_vals[1:])]
+                differences = differences[1:]
+                
+                # print(f"differences list: {differences}")
+                self.the_sync_bits = [(self.sync_start - 51 - i*(m.floor(np.mean(differences)/11))) for i in range(0,31)] 
+                print("the sync bits: {}".format(self.the_sync_bits))
                 # print("Eval X coordinates: {}\n".format(bit_x_vals))
                 og_sequence = [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1]
                 matches = True
@@ -281,7 +309,10 @@ class SuperGrapher:
                     print(f"fail strm: {bit_sequence}")
                     
         except Exception as e:
-            print(f":( {e}")
+            tb_lines = traceback.extract_tb(e.__traceback__)
+            # Get the last line in the traceback, which is where the exception occurred
+            last_line = tb_lines[-1]
+            print(f"Error occurred on line {last_line.lineno}: {e}")
         print("---------------")
         return found, bit_sequence
 
@@ -297,18 +328,12 @@ if __name__ == "__main__":
     plot_dir = sys.argv[1]
     plot_name = sys.argv[2]
     graph.set_directory(plot_dir)
+    graph.name = plot_name
     sync_word = [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0]
     # [0,0,1,0,0,1,1,1,0,1,0,1,1,1,0,0,1,0,1,0,0,0,1,1,1,1,1,0,1,0,1,1,1,0,0,1,0,1,0,0,0,1,1,1,1,1,0,1,0,1,1,1,0,0,1,0,1,0,0,0,1]
     barker_code = [1,1,1,-1,-1,-1,1,-1,-1,1,-1]
     
     def rolling_average(data, window_size):
-        """
-        Compute the rolling average of the given data using a specified window size.
-
-        :param data: List or numpy array of values
-        :param window_size: The size of the window over which to compute the average
-        :return: A numpy array containing the rolling averages
-        """
         if not isinstance(data, np.ndarray):
             data = np.array(data)
         
@@ -340,7 +365,7 @@ if __name__ == "__main__":
     graph.total_avg = np.mean(graph.toa_dist)
     graph.rolling_avg = [item - graph.total_avg if item - graph.total_avg > 0 else 0 for item in graph.rolling_avg]  
     
-    graph.the_point = graph.rolling_avg.index([item for item in graph.rolling_avg if item > graph.total_avg][0]) - 102
+    graph.the_point = graph.rolling_avg.index([item for item in graph.rolling_avg if item > graph.total_avg][0]) + (31 * 102) + 102
     print(graph.the_point)
     
     CORR_WIDTH = 102

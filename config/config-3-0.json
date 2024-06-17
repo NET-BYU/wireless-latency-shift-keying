@@ -1,21 +1,21 @@
 {
     "version": 3.0,
 
-    "rx_parameters": {
+    "rx_params": {
         "rx_interface": "eno1",
-        "pkt_target_ip": "192.168.0.246",
-        "pkt_src_addr": "DE:AD:BE:EF:DE:AD",
         "rx_ping_interval": 0.001,
         "rx_timeout_limit": 300,
-        "pkt_source_port": 25565,
-        "pkt_dest_port": 80
+        "ping_target_ip": "192.168.0.246",
+        "ping_src_addr": "DE:AD:BE:EF:DE:AD",
+        "ping_source_port": 25565,
+        "ping_dest_port": 80
     },
-    "decoding": {
+    "decoder_params": {
         "sync_word": [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0],
         "barker_code": [1,1,1,-1,-1,-1,1,-1,-1,1,-1],
         "packet_length": 32,
-        "corr_std_dev": 2,
-        "window_edge": 8
+        "correlation_std-dev_threshold": 2,
+        "correlation_window_grace": 8000
     },
     "graph_utils": {
         "plot_directory": "savefiles/plots/",

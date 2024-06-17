@@ -28,6 +28,13 @@ l.addLevelName(LOG_OPS,"Log Operations")
  - review the logging states and messages
  - wrap things in user-friendliness
 '''      
+class ProcName(Enum):
+    PINGER  = "wlsk-target-pinger"
+    SNIFFER = "wlsk-packet-sniffer"
+    MANAGER = "wlsk-packet-manager"
+    DECODER = "wlsk-state-machine"
+    NOISER  = "wlsk-characterizer"
+    LOGGER  = "wlsk-log-utility"
 
 class WlskReceiver:
     '''
@@ -36,11 +43,13 @@ class WlskReceiver:
     proper authentication beforehand. see the Github for more information:
     https://github.com/NET-BYU/wireless-latency-shift-keying/tree/main 
     '''
-    VERSION = 2.1
-        
+    VERSION = 3.0
+
     def __init__(self, config_path: string, log_to_console: bool=False,
-                 log_level: int=l.INFO, logfile: string=None, saveAllWindows: bool = False) -> None:
+                 log_level: int=l.INFO, logfile: string=None) -> None:
         '''WLSK Receiver
+        The only thing configured directly in the init function is the logging scheme. Everything else is stored
+        in the config file, which must be specified for the receiver to work properly.
         
         Keyword Arguments:
         - config_path: string   -- the path the configuration file for the receiver.
@@ -64,43 +73,43 @@ class WlskReceiver:
             file_handler.setFormatter(formatter)
             self.l.addHandler(file_handler)
 
-        # set up variables with required default values
-        self.saveAllWindows:    bool                = saveAllWindows
-        self.isInitalized:      bool                = False
-        self.msg_output_dir:    string              = None
-        self.DELETE_REQ:        int                 = -999
-        self.plot_num:          int                 = 0
-        self.WINDEX:            int                 = 0
-        self.utils:             WlskDecoderUtils    = WlskDecoderUtils()
-        self.liveplot:          animation           = None
-        self.livefig, self.liveax                   = plt.subplots(figsize=(15, 6))
+        # Variable              | Type                  | Initial Value | Description and Units
+        # RUNNING MODES:
+        self.isInitalized:      bool                    = False         # did all the variables get configured properly
+        self.listenOnlyMode:    bool                    = False         # should the receiver be in Listen Only Mode - save a single window to file
+        self.saveAllWindows:    bool                    = False         # should the receiver save every request window     (DEPRECATED)
+        self.doBeaconSniff:     bool                    = False         # should the reciever listen for beacon frames      (DEPRECATED)
+        self.livePlotEnabled:   bool                    = False         # should the receiver display a live plot of data? Can be very laggy
+        # RX_PARAMS
+        self.rx_interface:      string                  = None          # wired or wireless, for sending pings  
+        self.target_ip:         string                  = None          # ip of target for the ping packets 
+        self.src_addr:          string                  = None          # packet address for TX to detect pings 
+        self.ping_interval:     float                   = 0.001         # rate at which pings are sent                  | unit: seconds
+        self.global_timeout:    int                     = 100           # if no message is received, turn off           | unit: seconds
+        self.sport:             int                     = 25565         # port that the receiver listens with           | no unit
+        self.dport:             int                     = 80            # should always be port 80                      | no unit
+        # DECODER_PARAMS
+        self.SYNC_WORD:         list                    = None          # list of bits making up sync word      
+        self.SYNC_WORD_LEN:     int                     = 0             # length of the sync word; auto-gen             | unit: bits
+        self.BARKER_WORD:       list                    = None          # list of bits making up the barker code
+        self.BARK_WORD_LEN:     int                     = 0             # length of the barker code; auto-gen           | unit: bits
+        self.PACKET_LEN:        int                     = 0             # length of the packets expected to get         | unit: bits
+        self.CORR_GRACE:        int                     = 0             # how much extra to request than normal         | unit: seconds
+        # GRAPH UTILS
+        self.plot_dir:          string                  = None          # where to save all the graphs and files
+        self.save_window_idx:   int                     = 0             # initial index of the created windows          | no unit
+        self.listen_only_len:   int                     = 0             # how long to listen when in Listen Only Mode   | unit: seconds
+        self.liveplot:          animation               = None          # object for the live window manager
+        # BEACON UTIL
+        self.beacon_interface:  string                  = None          # wireless only; listens for beacon packets
+        self.beacon_ssid:       string                  = None          # name of the wifi beacon to listen for
+        self.beacon_mac:        string                  = None          # MAC address of the beacon  to listen to
+        self.beacon_instances:  int                     = 0             # how many beacons to average to find the offset
+        # UTILITIES
+        self.utils:             WlskDecoderUtils        = WlskDecoderUtils() # will become DEPRECATED in 3.0
+        self.grab_timeout:      float                                   # timeout of the grab_message function          | unit: seconds
+        self.NOISE_WIN_LEN:     int                                     # length of initial noise analysis              | unit: seconds
         
-        # Other variables to be used        | Description of the Variable           | Units
-        self.rx_interface:      string      # wired or wireless, for sending pings  
-        self.ping_interval:     float       # rate at which pings are sent          | seconds
-        self.global_timeout:    int         # if no message is received, turn off   | seconds
-        self.target_ip:         string      # ip to be target with the ping packets 
-        self.src_addr:          string      # packet address for TX to detect pings 
-        self.sport:             int         # port that the receiver listens with   
-        self.dport:             int         # should always be port 80              
-        self.SYNC_WORD:         list        # list of bits making up sync word      
-        self.SYNC_WORD_LEN:     int         # length of the sync word; auto-gen     | bits
-        self.BARKER_WORD:       list        # list of bits making up the barker code
-        self.BARK_WORD_LEN:     int         # length of the barker code; auto-gen   | bits
-        self.PACKET_SIZE:       int         # length of the packets expected to get | bits
-        self.DEC_TIMEOUT:       int         # for the decoder requests; ignore this | seconds
-        self.WINDOW_EDGE:       int         # how much extra to request than normal | seconds
-        self.ROLLOVER:          int         # if no sync word is found, clear old data
-        self.SYNC_REQ:          float       # length of decoder requests for sync   | seconds
-        self.MSG_REQ:           float       # length of decoder requests for msgs   | seconds
-        self.grab_timeout:      float       # timeout of the grab_message function  | seconds
-        self.NOISE_ATTN:        int         # length of initial noise analysis      | seconds
-        self.livePlotEnabled:   bool        # enables the live rtt viewer; kinda sus
-        self.doBeaconSniff:     bool        # ** this doesn't really work, but it might later **
-        self.beacon_interface:  string      # wireless only; listens for beacon packets
-        self.beacon_ssid:       string      # name of the wifi beacon to listen for
-        self.beacon_mac:        string      # MAC address of the beacon  to listen to
-        self.num_of_sniffs:     int         # how many beacons to average to find the offset
         
         ''' multiprocessing variables:                              | Set By / Used By
         - global_start: indicates that receiver is ready to start   | pinger     /  all
@@ -114,9 +123,9 @@ class WlskReceiver:
         '''
         self.__global_start                   = mlti.Event()
         self.__global_stop                    = mlti.Event()
-        self.__request_tx, self.__request_rx  = mlti.Pipe()
-        self.__process_queue                  = mlti.Queue()
-        self.__decoding_queue                 = mlti.Queue()
+        self.__request_tx, self.__request_rx  = mlti.Pipe() # DEPRECATED
+        self.__packet_queue                  = mlti.Queue()
+        self.__decoding_queue                 = mlti.Queue() # DEPRECATED
         self.__message_queue                  = mlti.Queue()
         self.__liveplotfeed                   = mlti.Queue()
         self.__global_noise                   = mlti.Value('i',-1)
@@ -127,13 +136,15 @@ class WlskReceiver:
         - process 1: sniffer. Listens to all outgoing and incoming pings.
         - process 2: manager. Organizes the traffic and creates RTTS etc.
         - process 3: decoder. Makes requests from the manager to decode messages.
+        - process 4: plotter. Makes a live plot graph of what is happening.
         '''
         self.processes = []
-        self.processes.append(mlti.Process(target= self._send_wlsk_pings))
-        self.processes.append(mlti.Process(target= self._sniff_ping_packets))
-        self.processes.append(mlti.Process(target= self._packet_manager))
-        self.processes.append(mlti.Process(target= self._request_and_decode))
-        self.processes.append(mlti.Process(target= self._live_plot_utility))
+        self.processes.append((ProcName.PINGER,mlti.Process(target= self._send_wlsk_pings)))
+        self.processes.append((ProcName.SNIFFER,mlti.Process(target= self._sniff_ping_packets)))
+        self.processes.append((ProcName.MANAGER,mlti.Process(target= self._packet_manager)))
+        self.processes.append((ProcName.DECODER,mlti.Process(target= self._request_and_decode)))
+        self.processes.append((ProcName.NOISER,mlti.Process(target= self.__find_noise_floor)))
+        self.processes.append((ProcName.LOGGER,mlti.Process(target= self._live_plot_utility)))
         
         # attempt to load the initalizer. THIS DOES NOT CRASH ON FAIL. (Should it?)
         self.initialize(config_path)
@@ -147,51 +158,58 @@ class WlskReceiver:
                 config_data = json.load(file)
                 version = config_data["version"]
                 if version != self.VERSION:
-                    raise ValueError("Incorrect version of the WLSK receiver config ({} vs {}).".format(version,self.VERSION))
+                    raise ValueError
                 
-                rxp = config_data["rx_parameters"]
-                self.rx_interface       = rxp["rx_interface"]
-                self.ping_interval      = rxp["rx_ping_interval"]
-                self.global_timeout     = rxp["rx_timeout_limit"]
-                self.target_ip          = rxp["pkt_target_ip"]
-                self.src_addr           = rxp["pkt_src_addr"]
-                self.sport              = rxp["pkt_source_port"]
-                self.dport              = rxp["pkt_dest_port"]
+                # config sections
+                rx_params       = config_data["rx_params"]
+                decoder_params  = config_data["decoder_params"]
+                graph_utils     = config_data["graph_utils"]
+                beacon_util     = config_data["beacon_util"]
+                misc_utils      = config_data["misc_utils"]
                 
-                dec = config_data["decoding"]
-                self.SYNC_WORD          = dec["sync_word"]
-                self.BARKER_WORD        = dec["barker_code"]
-                self.PACKET_SIZE        = dec["packet_length"]
-                self.DEC_TIMEOUT        = dec["decoder_timeout"]
-                self.WINDOW_EDGE        = dec["window_edge"]
-                self.WINDOW_ROLLOVER    = dec["window_rollover"]
-                self.corr_std_dev       = dec["corr_std_dev"]
-                
-                util = config_data["utilities"]
-                self.windowFileMode     = util["window_file_mode"]
-                self.livePlotEnabled    = util["live_plot_enabled"]
-                self.SAVE_WINDOW        = util["save_window"]
-                self.SAVEFILE           = util["savefile_num"]
-                self.saveAllWindows     = util["super_saver"]
-                self.grab_timeout       = util["grab_timeout"]
-                self.plot_dir           = util["plot_directory"]
-                self.NOISE_ATTN         = util["noise_attention"]
-                self.doBeaconSniff     = util["use_beacon_sniffs"]
-                self.beacon_interface   = util["beacon_interface"]
-                self.beacon_ssid        = util["beacon_interface"]
-                self.beacon_mac         = util["beacon_MAC"]
-                self.num_of_sniffs      = util["num_of_sniffs"]
-                
-                '''some of the variables are crafted to reduce config size.'''
+                # RUNNING MODES
+                self.saveAllWindows     = graph_utils["saveAllWindows"]
+                self.livePlotEnabled    = graph_utils["livePlotEnabled"]
+                self.listenOnlyMode     = graph_utils["listenOnlyMode"]
+                self.doBeaconSniff      = beacon_util["doBeaconSniffs"]
+                # RX_PARAMS
+                self.rx_interface       = rx_params["rx_interface"]
+                self.ping_interval      = rx_params["rx_ping_interval"]
+                self.global_timeout     = rx_params["rx_timeout_limit"]
+                self.target_ip          = rx_params["ping_target_ip"]
+                self.src_addr           = rx_params["ping_src_addr"]
+                self.sport              = rx_params["ping_source_port"]
+                self.dport              = rx_params["ping_dest_port"]
+                # DECODER_PARAMS
+                self.SYNC_WORD          = decoder_params["sync_word"]
                 self.SYNC_WORD_LEN      = len(self.SYNC_WORD)
+                self.BARKER_WORD        = decoder_params["barker_code"]
                 self.BARK_WORD_LEN      = len(self.BARKER_WORD)
-                self.SYNC_REQ           = (self.SYNC_WORD_LEN * 0.102) + self.WINDOW_EDGE
-                self.MSG_REQ            = self.SYNC_REQ + (self.PACKET_SIZE * self.BARK_WORD_LEN * 0.102)
-                
+                self.PACKET_LEN         = decoder_params["packet_length"]
+                self.CORR_THRESH        = decoder_params["correlation_std-dev_threshold"]
+                self.CORR_GRACE         = decoder_params["correlation_window_grace"]
+                # GRAPH UTILS
+                self.plot_dir           = graph_utils["plot_directory"]
+                self.listen_only_len    = graph_utils["listen_only_length"]
+                self.listen_only_fnum   = graph_utils["listen_savefile_num"]
+                # BEACON UTIL
+                self.beacon_interface   = beacon_util["beacon_interface"]
+                self.beacon_ssid        = beacon_util["beacon_ssid"]
+                self.beacon_mac         = beacon_util["beacon_MAC"]
+                self.beacon_instances   = beacon_util["beacon_instances"]
+                # UTILITIES
+                self.grab_timeout       = misc_utils["msg_grabber_timeout"]
+                self.NOISE_WIN_LEN      = misc_utils["noise_window_length"]
+
+                if self.livePlotEnabled:
+                    self.livefig, self.liveax = plt.subplots(figsize=(15, 6))
+
+        except KeyError as e:
+            self.l.error(f"HEAD\t- couldn't initialize because there was an illegal key (config name conflict or program error): {e}")     
         except ValueError:
-            self.l.error("HEAD\t- couldn't initialize because the config file version did not match.")
+            self.l.error("HEAD\t- couldn't initialize because the config file version did not match: {} (expected) vs. {} (actual)".format(self.VERSION,version))
         except FileNotFoundError:
-            self.l.error("HEAD\t- couldn't initialize because the config file path given was not valid.")
+            self.l.error("HEAD\t- couldn't initialize because the config file path given was not valid: ({})".format(configuration))
         else:
             self.l.info("HEAD\t- Receiver initialized successfully.")
             self.isInitalized = True
@@ -202,18 +220,18 @@ class WlskReceiver:
         if not self.isInitalized:
             self.l.error("HEAD\t- Tried to start an uninitialized recevier. Fail")
             return
-        elif self.running():
+        elif self.isRunning():
             self.l.warning("HEAD\t- cannot start a receiver that is already going.")
             return
         else:
             for i,process in enumerate(self.processes):
                 # you can find the process list in __init__ under 'processes'
-                process.start()
+                process[1].start()
             return
     
     def stop_receiver(self) -> None:
         '''tells the running receiver to stop running. This may cause errors if it doesn't exit cleanly.'''
-        if not self.running():
+        if not self.isRunning():
             self.l.warning("HEAD\t- cannot stop a receiver that isn't running.")
             return
         
@@ -221,10 +239,10 @@ class WlskReceiver:
             self.__global_stop.set()
             itrs = 0
             # give it 5 seconds to try to kill itself, otherwise just finish the job
-            while self.running() and itrs < 5:
+            while self.isRunning() and itrs < 5:
                 time.sleep(1)
                 itrs += 1
-            if self.running() and itrs >= 5:
+            if self.isRunning() and itrs >= 5:
                 for process in self.processes:
                     process.terminate()
                 self.l.info("HEAD\t- [remaining processes killed after hanging - consider restarting program before continuing.]")
@@ -240,15 +258,15 @@ class WlskReceiver:
         return not self.__message_queue.empty()
     
     def grab_message(self) -> list:
-        '''attempts to grab a message from the message queue. Timeout is set in config file.'''
+        '''attempts to grab a message from the message queue. Timeout is set in config: misc: msg_grabber_timeout'''
         try:
             return self.__message_queue.get(timeout=self.grab_timeout)
         except queue.Empty:
             return None
     
-    def running(self) -> bool:
+    def isRunning(self) -> bool:
         '''returns true or false to indicate if the receiver is active.'''
-        return any([process.is_alive() for process in self.processes])
+        return any([process[1].is_alive() for process in self.processes])
     
     def _send_wlsk_pings(self) -> None:
         '''Pinger Process for WLSK
@@ -309,6 +327,7 @@ class WlskReceiver:
         
         # this is the function that actually determines whether we think it was a WLSK packet
         # https://scapy.readthedocs.io/en/latest/api/scapy.layers.inet.html#scapy.layers.inet.TCP
+
         def process_packet(packet) -> None:
             if packet.haslayer(TCP):
                 seq = packet[TCP].seq
@@ -320,15 +339,15 @@ class WlskReceiver:
                 # this is essentially how we determine the WLSK packets status. Ngl it could be better
                 # In fact, I want to point out this literally tells us nothing based on our current filter...
                 # just pick ports that aren't popular I guess
-                if dport == 80 and sport == 25565:
+                if dport == self.dport and sport == self.sport:
                     outgoing = True
-                elif dport == 25565 and sport == 80:
+                elif dport == self.sport and sport == self.dport:
                     outgoing = False
                 else:
                     return        
                 
                 # to manager: packet num, time, and 'layer' (outgoing or incoming)
-                self.__process_queue.put((seq if outgoing else ackR, packet.time, 0 if outgoing else 1))
+                self.__packet_queue.put((seq if outgoing else ackR, packet.time, 0 if outgoing else 1))
 
             else:
                 self.l.error("SNIFFS\t- port has other traffic. Consider moving. : {}".format(packet))
@@ -336,99 +355,121 @@ class WlskReceiver:
         def stop_sniff(packet,stop_event):
             return stop_event.is_set()
                     
-        sniff(iface=self.rx_interface,prn=lambda pkt: process_packet(pkt),filter=sniff_filter, stop_filter=lambda pkt: stop_sniff(pkt,self.__global_stop)) # <---------------
+        sniff(iface=self.rx_interface,prn=lambda pkt: process_packet(pkt),filter=sniff_filter, stop_filter=lambda pkt: stop_sniff(pkt,self.__global_stop))
         self.l.info("HEAD\t- ending sniffer process")
         return 
     
     def _packet_manager(self) -> None:
-        '''Packet Manager Process for WLSK
-        
-        the packet manager receives a stream of packets from the sniffer process
-        via the process_queue. It then determines whether the packet was incoming
-        or outgoing, and assigns the appropriate values within the general pkt_list.
-        this list has 3 'channels': the outgoing time, the incoming time, and the
-        rtt. each channel is a dictionary where the key is the sequence number of
-        the packet, and the value is the time. The packet manager also fulfills 
-        requests made by the decoder process by giving it windows of stored data
-        and delete data that has been processed or deemed useless.
-        
-        This process cannot start until after the __global_start event. It can be killed 
-        with the __global_stop event.
-        '''
         # wait for pinger to give the okay
         self.__global_start.wait()
         self.l.info("HEAD\t- Beginning manager process")
         
         # Manager Variables
         pkt_list    = [{},{},{}]    # list of time in, time out, and rtt for each ping sent
-        waiting     = False         # status of an active request; set if desired window is not ready
-        ready       = False         # flag to tell manager to send the current request window out
-        request     = None          # receives the request, which is a number representing window length
-        Rtime       = None          # receives the starting time index for the request, rounded to the nearest ping time
-        hpkt        = 0             # the 'high' packet, or last packet considered a part of the request window
 
         while not self.__global_stop.is_set():
-            
-            # while waiting, if you get another poll, that's a problem. Too many requests.
-            if self.__request_rx.poll():
-                if waiting:
-                    self.l.error("SAVER\t- received messages too fast. : {}".format(self.__request_rx.recv()))
-                    self.__global_stop.set()
-                request, Rtime = self.__request_rx.recv()
-                waiting = True
-
-            # both sync and msg requests are the same thing, just with a different window length
-            if request != self.DELETE_REQ and ready:
-                self.l.info("MANAGE\t- RSP: window ({}) {} {}".format(self.WINDEX,request,Rtime))
-                # calculate 'lowest' packet, or first packet considered in the window
-                lpkt = self.__determine_packet_index(pkt_list[1],Rtime)
-                outgoing_packets = [{k: v for k, v in d.items() if lpkt <= k <= hpkt} for d in pkt_list]
-                self.__decoding_queue.put(outgoing_packets)
-                waiting, ready, request, Rtime = False, False, None, None
-                
-            # a delete request clears all data before a certain time index to reduce list sizes and clutter
-            elif request == self.DELETE_REQ and ready:
-                self.l.info("SAVER\t- RSP: delete {}".format(Rtime))
-                # determine the packet idx closest to the given request time
-                delpkt = self.__determine_packet_index(pkt_list[1],Rtime)
-                keys_to_remove = [key for key in pkt_list[1].keys() if key <= delpkt]
-                for key in keys_to_remove:
-                    if key in pkt_list[0]: del pkt_list[0][key]
-                    if key in pkt_list[1]: del pkt_list[1][key]
-                    if key in pkt_list[2]: del pkt_list[2][key]
-                # this is basically just a success code so the decoder can continue
-                self.__decoding_queue.put([0,0,0])
-                waiting, ready, request, Rtime = False, False, None, None
-            
             # from manager: layer 0 = outgoing, 1 = incoming
-            pkt_num, pkt_time, layer = self.__process_queue.get()
+            pkt_num, pkt_time, layer = self.__packet_queue.get()
             
             # save the packet time in its corresponding layer
             pkt_list[layer][pkt_num] = pkt_time
             
             # if the packet is incoming, also calculate the rtt layer
-            # WARNING: this system may break if packets ever get dropped. High stress environment?
             if layer == 1 and pkt_num in pkt_list[0]:
                 rtt = pkt_list[1][pkt_num] - pkt_list[0][pkt_num]
                 if rtt > 0 and rtt < .5:
                     pkt_list[2][pkt_num] = rtt
                 else:
                     pkt_list[2][pkt_num] = -.01
-                self.__liveplotfeed.put((pkt_num,rtt))
-                # only ask on incoming messages because otherwise the keys may not line up
-                if Rtime is not None and pkt_time - Rtime > request:
-                    ready = True
-                    hpkt = self.__determine_packet_index(pkt_list[1],(Rtime + request))
+                # put the calculation for the millisecond here?
+                    
         self.l.info("HEAD\t- ending manager process")
         return
-  
-    '''
-    TODO with decoder:
-    - Maybe just send a delete request for the data everytime that the sync word fails? so that it gets less clogged. Need
-    to compare the amount of time it takes to do a big vs. little delete then to see if that takes too much time w/ extra requests.
-    - I wiped out the sync word function and the decode function. They need to be redone.
-    - actually use the noise floor calculations?
-    '''  
+
+    def _decode_messages(self) -> None:
+        # wait for pinger to give the okay
+        self.__global_start.wait()
+        self.l.info("HEAD\t- Beginning manager process")
+
+        class dState(Enum):
+            INIT = auto()
+            LOAD = auto()
+            SHFT = auto()
+            NCHK = auto()
+            GCHK = auto()
+            CORR = auto()
+            MSGL = auto()
+            MSGD = auto()
+
+        state = dState.INIT
+
+        while not self.__global_stop.is_set():
+            match (state):
+                case dState.INIT:
+                    # setup goes here!
+                    full_L = False
+                    full_M = False
+                    isNoisy = False
+                    hasGaps = False
+                    strongCorr = False
+                    msgDone = False
+                    state = dState.LOAD
+
+                case dState.LOAD:
+                    # how to get x packets :)
+                    if full_L:
+                        state = dState.NCHK
+
+                case dState.SHFT:
+                    # do a shift
+                    state = dState.NCHK
+                    pass
+                
+                case dState.NCHK:
+                    # do the noise checking!
+                    if isNoisy:
+                        state = dState.GCHK
+                    else:
+                        state = dState.SHFT
+                
+                case dState.GCHK:
+                    # do the gap checking!
+                    if hasGaps:
+                        state = dState.CORR
+                    else:
+                        state = dState.SHFT
+                
+                case dState.CORR:
+                    # correlate some stuff
+                    if strongCorr:
+                        state = dState.MSGL
+                    else:
+                        state = dState.SHFT
+                
+                case dState.MSGL:
+                    # do more packet loading!
+                    if full_M:
+                        state = dState.MSGD
+                
+                case dState.MSGD:
+                    # read the bit!
+                    if msgDone:
+                        state = dState.LOAD
+                    else:
+                        state = dState.MSGL
+                
+                case _:
+                    self.l.error(f"Reached illegal state!! state: {state}")
+
+            pass
+        return
+    
+    def _characterizer(self) -> None:
+        return
+    
+    def _logging_function(self) -> None:
+        return
+    
     def _request_and_decode(self) -> None:
         '''Request and Decode Process for WLSK
         
@@ -479,8 +520,8 @@ class WlskReceiver:
                     self.l.info("HEAD\t- Running in Save Mode.")
                     init_request = (self.SAVE_WINDOW,request_time)
                 else:
-                    init_request = (self.NOISE_ATTN, request_time)
-                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX,init_request[0],init_request[1]))
+                    init_request = (self.NOISE_WIN_LEN, request_time)
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.save_window_idx,init_request[0],init_request[1]))
                 self.__request_tx.send(init_request)
 
                 # after sending a request, the next thing to do is always listen for the window response
@@ -500,11 +541,11 @@ class WlskReceiver:
                     break # if you get a null response, it means the packet manager died or something.
                 
                 # change the request time for the next operation and the jump to that state
-                request_time += self.NOISE_ATTN
+                request_time += self.NOISE_WIN_LEN
                 STATE = dState.DELETE_DATA
                 
             elif STATE == dState.FIND_SYNC_WORD:
-                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.SYNC_REQ, request_time))
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.save_window_idx, self.SYNC_REQ, request_time))
                 self.__request_tx.send((self.SYNC_REQ, request_time))
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
                 if stack_in == None: break # The packet manager died or something.
@@ -523,7 +564,7 @@ class WlskReceiver:
                         STATE = dState.DELETE_DATA
                                 
             elif STATE == dState.HEAR_MSG:
-                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.WINDEX, self.MSG_REQ, request_time))
+                self.l.info("DECODE\t- REQ: window ({}) {} {}".format(self.save_window_idx, self.MSG_REQ, request_time))
                 self.__request_tx.send((self.MSG_REQ, request_time))
                 stack_in = listen_cautious(self.__decoding_queue, self.__global_stop)
                 if stack_in == None: break # If he died, he died
@@ -620,7 +661,7 @@ class WlskReceiver:
             # Calculate Bit Decision X-values based on the sync word location.
             timed_xcorr_bit_windows = []
             ori_bit_windows = []
-            for bit in range(1, self.PACKET_SIZE+1):
+            for bit in range(1, self.PACKET_LEN+1):
                 xval = sync_start + self.BARK_WORD_LEN * 102 * bit+5*bit
                 if xval < len(xcorr_barker):
                     timed_xcorr_bit_windows.append(xval)
@@ -687,8 +728,8 @@ class WlskReceiver:
         return found_sync_word, bit_sequence
 
     def __save_window(self,stack) -> None:
-        path = os.path.join(self.plot_dir, "saved_data/ss{}.csv".format(self.WINDEX))
-        self.WINDEX += 1
+        path = os.path.join(self.plot_dir, "saved_data/ss{}.csv".format(self.save_window_idx))
+        self.save_window_idx += 1
         with open(path,mode='w',newline='') as file:
             writer = csv.writer(file)
             common_keys = sorted(set(stack[0]).intersection(*stack[1:]))
@@ -738,7 +779,7 @@ class WlskReceiver:
                 # time.sleep(0.001)
             return scatter,
             
-        ani = animation.FuncAnimation(self.livefig, update, init_func=init, blit=True, interval=100)
+        self.liveplot = animation.FuncAnimation(self.livefig, update, init_func=init, blit=True, interval=1000)
         
         plt.show()
         return

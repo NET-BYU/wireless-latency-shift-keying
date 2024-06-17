@@ -20,7 +20,14 @@ LOG_OPS = 17
 l.addLevelName(LOG_PKTS,"Log Packets")
 l.addLevelName(LOG_DMPS,"Log Data Dumps")
 l.addLevelName(LOG_OPS,"Log Operations")
-        
+
+''' TODO:
+ - add in the rx_timeout_limit to the state machine
+ - talk to Chris about making multiple instances vs. multiple lines
+ - clean up the init stuff
+ - review the logging states and messages
+ - wrap things in user-friendliness
+'''      
 
 class WlskReceiver:
     '''
@@ -32,7 +39,7 @@ class WlskReceiver:
     VERSION = 2.1
         
     def __init__(self, config_path: string, log_to_console: bool=False,
-                 log_level: int=l.INFO, logfile: string=None, doGraphs: bool = False) -> None:
+                 log_level: int=l.INFO, logfile: string=None, saveAllWindows: bool = False) -> None:
         '''WLSK Receiver
         
         Keyword Arguments:
@@ -40,7 +47,7 @@ class WlskReceiver:
         - log_to_console: bool  -- log output messages to the console.
         - log_level: int        -- determine the log level WLSK should run at.
         - logfile: string       -- if given, WLSK will log outputs to the given file.
-        - doGraphs: bool        -- save graphs when processing windows. Slows the receiver considerably.
+        - saveAllWindows: bool        -- save graphs when processing windows. Slows the receiver considerably.
         '''
         self.l = l.getLogger(__name__)
         self.l.setLevel(log_level)
@@ -58,7 +65,7 @@ class WlskReceiver:
             self.l.addHandler(file_handler)
 
         # set up variables with required default values
-        self.doGraphs:          bool                = doGraphs
+        self.saveAllWindows:    bool                = saveAllWindows
         self.isInitalized:      bool                = False
         self.msg_output_dir:    string              = None
         self.DELETE_REQ:        int                 = -999
@@ -241,7 +248,7 @@ class WlskReceiver:
     
     def running(self) -> bool:
         '''returns true or false to indicate if the receiver is active.'''
-        return any(process.is_alive() for process in self.processes)
+        return any([process.is_alive() for process in self.processes])
     
     def _send_wlsk_pings(self) -> None:
         '''Pinger Process for WLSK

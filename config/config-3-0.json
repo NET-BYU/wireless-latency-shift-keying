@@ -18,22 +18,15 @@
         "correlation_window_grace": 8000
     },
     "graph_utils": {
-        "plot_directory": "savefiles/plots/",
-        "saveAllWindows": false,
-        "livePlotEnabled": false,
-        "listenOnlyMode": true,
-        "listen_only_length": 100,
-        "listen_savefile_num": 32
+        "listen_mode_length": 100
     },
     "beacon_util": {
-        "doBeaconSniffs": false,
         "beacon_interface": "wlp1s0mon",
         "beacon_ssid": "EB-IOT-LAB",
         "beacon_MAC": "60:26:ef:b2:28:a2",
         "beacon_instances": 20
     },
     "misc_utils": {
-        "noise_window_length": 10,
-        "msg_grabber_timeout": 0.1
+        "noise_window_length": 10
     }
 }

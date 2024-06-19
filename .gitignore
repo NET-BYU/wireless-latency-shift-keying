@@ -28,3 +28,5 @@ savefiles/plots/*
 !savefiles/plots/example.png
 savefiles/windows/*
 !savefiles/windows/example.csv
+# I want to upload things on this particular branch: these shouldn't carry back to main
+!savefile/windows/ss*

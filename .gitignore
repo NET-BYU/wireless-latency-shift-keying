@@ -25,4 +25,5 @@ source/rx_v2/rx_test_plots/
 
 # ignore the savefiles, but keep the example plot.
 savefiles/**
-!savefile/example/*
+!savefiles/example
+!savefiles/example/*

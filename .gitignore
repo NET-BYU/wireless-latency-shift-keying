@@ -24,8 +24,5 @@ wlsk_rec.log
 source/rx_v2/rx_test_plots/
 
 # ignore the savefiles, but keep the example plot.
-savefiles/plots/*
-!savefiles/plots/example.png
-# I want to upload things on this particular branch: these shouldn't carry back to main
-# savefiles/windows/*
-!savefiles/windows/example.csv
+savefiles/**
+!savefile/example/*

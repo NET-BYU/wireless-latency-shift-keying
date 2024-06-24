@@ -24,6 +24,6 @@ wlsk_rec.log
 source/rx_v2/rx_test_plots/
 
 # ignore the savefiles, but keep the example plot.
-savefiles/**
-!savefiles/example
-!savefiles/example/*
+#savefiles/**
+#!savefiles/example
+#!savefiles/example/*

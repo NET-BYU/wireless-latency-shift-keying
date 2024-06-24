@@ -1,0 +1,19 @@
+INFO	- WLSK-HEAD: Initializing receiver...
+INFO	- WLSK-HEAD: Receiver initialized successfully.
+INFO	- WLSK-PING: Beginning pinger; intvl: 0.001; ip: 192.168.0.246
+INFO	- WLSK-SNIF: Beginning sniff process
+INFO	- WLSK-CHAR: Beginning characterizer process
+INFO	- WLSK-PFSM: Beginning PFSM process
+INFO	- WLSK-BUKT: Beginning bucketer process
+INFO	- WLSK-LOGY: Beginning packet log process
+INFO	- WLSK-DEBG: Debug session is running.
+INFO	- WLSK-HEAD: waiting for queues to flush...
+INFO	- WLSK-HEAD: queues flushed, exiting...
+INFO	- WLSK-PING: ending pinger process
+INFO	- WLSK-BUKT: ending bucketer process
+INFO	- WLSK-CHAR: ending characterizer process
+INFO	- WLSK-SNIF: ending sniffer process
+INFO	- WLSK-DEBG: debug session has ended.
+INFO	- WLSK-LOGY: ending packet log process
+INFO	- WLSK-PFSM: ending PFSM process
+INFO	- WLSK-HEAD: receiver is now inactive.

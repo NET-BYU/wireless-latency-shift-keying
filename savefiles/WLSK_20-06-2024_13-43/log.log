@@ -1,0 +1,44 @@
+INFO	- WLSK-HEAD: Initializing receiver...
+INFO	- WLSK-HEAD: Receiver initialized successfully.
+INFO	- WLSK-PING: Beginning pinger; intvl: 0.001; ip: 192.168.0.246
+DEBUG	- WLSK-PING: global_time set to 1718912594.0972674
+INFO	- WLSK-SNIF: Beginning sniff process
+INFO	- WLSK-PFSM: Beginning PFSM process
+INFO	- WLSK-CHAR: Beginning characterizer process
+INFO	- WLSK-BUKT: Beginning bucketer process
+DEBUG	- WLSK-SNIF: health indicators: 2 0 0
+INFO	- WLSK-DEBG: Debug session is running.
+INFO	- WLSK-LOGY: Beginning packet log process
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 21 bukt: 0 save-bukt: 42 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 1 bukt: 0 save-bukt: 2 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 1 bukt: 0 save-bukt: 3 msg: 0
+DEBUG	- WLSK-SNIF: health indicators: 4 0 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 1 save-raw: 1 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 1 save-raw: 3 bukt: 0 save-bukt: 4 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 1 bukt: 1 save-bukt: 1 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 3 bukt: 0 save-bukt: 6 msg: 0
+DEBUG	- WLSK-SNIF: health indicators: 2 0 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 1 save-raw: 1 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+DEBUG	- WLSK-HEAD: grab_message timed out after 20 seconds.
+INFO	- WLSK-HEAD: waiting for queues to flush...
+INFO	- WLSK-HEAD: queues flushed, exiting...
+INFO	- WLSK-BUKT: ending bucketer process
+INFO	- WLSK-PING: ending pinger process
+INFO	- WLSK-CHAR: ending characterizer process
+INFO	- WLSK-SNIF: ending sniffer process
+DEBUG	- WLSK-DEBG: queue sizes: raw: 0 save-raw: 0 bukt: 0 save-bukt: 0 msg: 0
+INFO	- WLSK-DEBG: debug session has ended.
+INFO	- WLSK-PFSM: ending PFSM process
+WARNING	- WLSK-HEAD: [process "wlsk-log-utility" was killed after still hanging]
+INFO	- WLSK-HEAD: receiver is now inactive.

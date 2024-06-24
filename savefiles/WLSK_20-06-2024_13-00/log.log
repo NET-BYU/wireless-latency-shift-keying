@@ -1,0 +1,21 @@
+INFO	- WLSK-HEAD: Initializing receiver...
+INFO	- WLSK-HEAD: Receiver initialized successfully.
+INFO	- WLSK-PING: Beginning pinger; intvl: 0.001; ip: 192.168.0.246
+DEBUG	- WLSK-PING: global_time set to 1718910010.722678
+INFO	- WLSK-SNIF: Beginning sniff process
+INFO	- WLSK-BUKT: Beginning bucketer process
+INFO	- WLSK-CHAR: Beginning characterizer process
+INFO	- WLSK-PFSM: Beginning PFSM process
+INFO	- WLSK-LOGY: Beginning packet log process
+DEBUG	- WLSK-SNIF: health indicators: 3 0 0
+DEBUG	- WLSK-SNIF: health indicators: 14 0 0
+DEBUG	- WLSK-HEAD: grab_message timed out after 10 seconds.
+INFO	- WLSK-HEAD: waiting for queues to flush...
+INFO	- WLSK-HEAD: queues flushed, exiting...
+INFO	- WLSK-BUKT: ending bucketer process
+INFO	- WLSK-PING: ending pinger process
+INFO	- WLSK-CHAR: ending characterizer process
+INFO	- WLSK-SNIF: ending sniffer process
+INFO	- WLSK-PFSM: ending PFSM process
+INFO	- WLSK-LOGY: ending packet log process
+INFO	- WLSK-HEAD: receiver is now inactive.

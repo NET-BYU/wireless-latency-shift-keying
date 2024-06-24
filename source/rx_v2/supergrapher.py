@@ -10,6 +10,7 @@ import math as m
 import csv
 import sys
 import os
+from scipy.signal import correlate as corr
 
 
 class SuperGrapher:
@@ -17,6 +18,8 @@ class SuperGrapher:
     def __init__(self,directory="./"):
         
         self.plot_dir = directory
+        self.success_pkt = None
+        self.rtt_array = None
         self.toa_dist = None
         self.rts_array = None
         self.xcorr_sync = None
@@ -40,6 +43,7 @@ class SuperGrapher:
         self.the_bits = []
         self.the_sync_bits = []
         self.name = ""
+        self.var_data = None
         return
     
     def set_directory(self,directory):
@@ -48,7 +52,7 @@ class SuperGrapher:
     
     def make_graph(self):
         print("get. graph. good.")
-        NUM_OF_GRAPHS = 4
+        NUM_OF_GRAPHS = 9
         
         # in units of graphs
         length = m.ceil(m.sqrt(NUM_OF_GRAPHS))
@@ -58,35 +62,48 @@ class SuperGrapher:
         fig = plt.figure(figsize=(size,size))
         fig.suptitle("Results {}".format(self.name), fontsize=25)
         
-        ax1 = fig.add_subplot(length, length, 1)
+        ax1 = fig.add_subplot(3, 2, 1)
         ax1.title.set_text('Received Packets per 1 ms Interval')
         ax1.minorticks_on()
+        ax1.set_xlabel("units of ms")
+        ax1.set_ylabel("units of packets")
         ax1.plot(self.toa_dist, color='black', linewidth=0.5)
-        ax1.hlines([self.noise_floor],*ax1.get_xlim(),colors=["blue"])
-        ax1.vlines(self.the_bits,*ax1.get_ylim(),colors=["gray"],linestyle=':')
-        ax1.vlines(self.the_sync_bits,*ax1.get_ylim(),colors=["gold"],linestyle=':')
-        ax1.vlines([self.sync_start],*ax1.get_ylim(),colors=["blue"])
-        ax1.vlines([self.the_point],*ax1.get_ylim(),colors=["green"],linestyle=':')
+        # ax1.hlines([self.noise_floor],0,max(self.toa_dist),colors=["blue"])
+        # ax1.vlines(self.the_bits,0,max(self.toa_dist),colors=["gray"],linestyle=':')
+        # ax1.vlines(self.the_sync_bits,0,max(self.toa_dist),colors=["gold"],linestyle=':')
+        ax1.vlines([self.sync_start],0,max(self.toa_dist),colors=["blue"])
+        # ax1.vlines([self.the_point],0,max(self.toa_dist),colors=["green"],linestyle=':')
         # ax1.vlines([self.sync_start+16+102.4*n for n in range(0,32)],*ax1.get_ylim(),colors=["red"],linestyle=':')
         #+102.4*n for n in range(0,32)
         
-        ax2 = fig.add_subplot(length, length, 2)
+        ax4 = fig.add_subplot(3, 2, 2)
+        ax1.set_xlabel("units of ms")
+        ax1.set_ylabel("units of packets")
+        ax4.title.set_text('RTT Array by packet')
+        ax4.minorticks_on()
+        # ax4.vlines([self.success_pkt],0,max(self.rtt_array),colors=["blue"])
+        ax4.plot(self.rtt_array, color='black', linewidth=0.5)
+        
+        
+        ax2 = fig.add_subplot(3, 2, 3)
         ax2.title.set_text('sync indices by index')
         ax2.minorticks_on()
-        ax2.scatter(range(0, len(self.sync_indices)), self.sync_indices, s=[3 for val in self.sync_indices],color='black')
+        sync_range = [0] * len(self.xcorr_sync)
+        for i in self.sync_indices: sync_range[i] = 1
+        ax2.plot(sync_range, linewidth=0.5,color='black')
         # ax2.vlines(self.test_points,*ax2.get_ylim(),colors=["orange"],linestyle=':')
         # ax2.vlines([self.other_point],*ax2.get_ylim(),colors=["blue"])            
         
-        ax3 = fig.add_subplot(length,length,3)
+        ax3 = fig.add_subplot(3,2,5)
         ax3.title.set_text("Sync word correlation")
         ax3.minorticks_on()
         ax3.plot(self.xcorr_sync,color='black',linewidth=1)
-        ax3.hlines([self.xcorr_sync.std()*self.sync_stdev,self.xcorr_sync.std()*-self.sync_stdev],*ax3.get_xlim())
-        ax3.vlines(self.the_bits,*ax3.get_ylim(),colors=["gray"],linestyle=':')
-        ax3.vlines(self.the_sync_bits,*ax3.get_ylim(),colors=["gold"],linestyle=':')
-        ax3.vlines([self.the_point],*ax3.get_ylim(),colors=["green"],linestyle=':')
+        ax3.hlines([self.xcorr_sync.std()*self.sync_stdev,self.xcorr_sync.std()*-self.sync_stdev],0,len(self.xcorr_sync))
+        # ax3.vlines(self.the_bits,*ax3.get_ylim(),colors=["gray"],linestyle=':')
+        # ax3.vlines(self.the_sync_bits,*ax3.get_ylim(),colors=["gold"],linestyle=':')
+        # ax3.vlines([self.the_point],*ax3.get_ylim(),colors=["green"],linestyle=':')
         # ax3.vlines(self.xcorr_tests,*ax3.get_ylim(),colors=["orange"],linestyle=':')
-        ax3.vlines([self.sync_start],*ax3.get_ylim(),colors=["blue"])
+        # ax3.vlines([self.sync_start],*ax3.get_ylim(),colors=["blue"])
 
         # ax4 = fig.add_subplot(length, length, 4)
         # ax4.title.set_text('Compressed Packets per 1 ms Interval')
@@ -108,21 +125,22 @@ class SuperGrapher:
         # ax6.title.set_text("Compressed correlation")
         # ax6.vlines([self.the_point],*ax6.get_ylim(),colors=["blue"],linestyle=':')
         
-        # ax7 = fig.add_subplot(length,length,7)
-        # ax7.plot(self.xcorr_barker,color='black',linewidth=1)
-        # ax7.hlines([self.xcorr_barker.std()*self.sync_stdev,self.xcorr_barker.std()*-self.sync_stdev],*ax4.get_xlim())
+        ax7 = fig.add_subplot(3,2,6)
+        ax7.plot(self.var_data,color='black',linewidth=1)
+        # ax7.hlines([self.xcorr_barker.std()*self.sync_stdev,self.xcorr_barker.std()*-self.sync_stdev],0,len(self.xcorr_barker))
         # ax7.vlines([self.sync_start],ymin=min(self.xcorr_barker),ymax=max(self.xcorr_barker),colors=["green"],linestyle=':')
-        # ax7.title.set_text("Barker word correlation")
+        ax7.title.set_text("Variance Data")
+        ax7.vlines([self.sync_start],0,max(self.toa_dist),colors=["blue"])
         
-        ax8 = fig.add_subplot(length, length, 4)
+        ax8 = fig.add_subplot(3, 2, 4)
         ax8.title.set_text('Rolling average of Packets per 1 ms Interval')
         ax8.minorticks_on()
         ax8.plot(self.rolling_avg, color='black', linewidth=0.5)
-        ax8.vlines(self.the_bits,*ax8.get_ylim(),colors=["gray"],linestyle=':')
-        ax8.vlines(self.the_sync_bits,*ax8.get_ylim(),colors=["gold"],linestyle=':')
+        # ax8.vlines(self.the_bits,*ax8.get_ylim(),colors=["gray"],linestyle=':')
+        # ax8.vlines(self.the_sync_bits,*ax8.get_ylim(),colors=["gold"],linestyle=':')
         # ax8.vlines([0,self.cutoff],*ax8.get_ylim(),colors=["red"],linestyle=':')
-        ax8.hlines([self.total_avg],*ax8.get_xlim(),colors=["red"])
-        ax8.vlines([self.the_point],*ax8.get_ylim(),colors=["green"],linestyle=':')
+        # ax8.hlines([self.total_avg],0,len(self.xcorr_sync),colors=["red"])
+        # ax8.vlines([self.the_point],*ax8.get_ylim(),colors=["green"],linestyle=':')
         # ax8.vlines(self.xcorr_tests,*ax8.get_ylim(),colors=["orange"],linestyle=':')
         ax8.vlines([self.sync_start],*ax8.get_ylim(),colors=["blue"])
         
@@ -169,6 +187,7 @@ class SuperGrapher:
         # find the sync word in the raw data 
         # self.compressed = pd.Series([2 if item < self.noise_floor else item for item in toa_dist ])
         self.xcorr_sync = util.correlate(raw_data=self.toa_dist, code=sync_word,window_size=75,width=corr_width,put_it_der=right_her)
+        self.var_data = self.toa_dist.rolling(window=75).var().bfill()
         # self.xcorr_comp = util.correlate(raw_data=self.compressed, code=sync_word,window_size=75,width=corr_width,put_it_der=right_her)
         # print(f"{xcorr_sync[0]} {xcorr_sync[2]} {xcorr_sync[4]}")
 
@@ -199,10 +218,11 @@ class SuperGrapher:
         try:
             print("---------------")
             self.determine_test_points()
-            for test_start in range(1):#range(41790,len(toa_dist)): #self.test_points:
+            for test_start in range(41700,len(toa_dist)): #range(1): #self.test_points:
                 bit_sequence = []
                 # original sync start
-                self.sync_start = self.sync_indices[0] if self.xcorr_sync[self.sync_indices[0]] > self.xcorr_sync[self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]]*.5 else self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]
+                # self.sync_start = self.sync_indices[0] if self.xcorr_sync[self.sync_indices[0]] > self.xcorr_sync[self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]]*.5 else self.sync_indices[np.argmax(self.xcorr_sync[self.sync_indices])]
+                self.sync_start = test_start
                 print(self.sync_start)
                 # self.sync_start = np.where(self.xcorr_sync == self.sync_indices[0])[0][0] #np.where(self.xcorr_sync == max(self.sync_indices))[0][0] 
                 # self.comp_start = np.where(self.xcorr_comp == self.sync_indices_comp[0])[0][0] #np.where(self.xcorr_comp == max(self.sync_indices_comp))[0][0]
@@ -320,7 +340,7 @@ class SuperGrapher:
     
 if __name__ == "__main__":
     decoder = WKD()
-    receiver = WlskReceiver("config/wlsk-config-2-1.json")
+    # receiver = WlskReceiver("config/wlsk-config-2-1.json")
     utility = WlskDecoderUtils()
     liststack = []
     rstack = []
@@ -357,7 +377,7 @@ if __name__ == "__main__":
     # og = stack[0][0]
     # for i,item in enumerate(stack):
     #     stack2[i] = [j for j in stack[i] if (j - og < WINDOW_SIZE)]
-    
+    graph.rtt_array = liststack[2]
     graph.rts_array = np.array(liststack[1])
     graph.toa_dist, _ = utility.toa_distribution(graph.rts_array)
     
@@ -372,9 +392,16 @@ if __name__ == "__main__":
     THIS_HER = -1
     
     graph.find_noise_floor()
+    
     found, tbits = graph.decode_single_test(graph.toa_dist,sync_word,barker_code,corr_width=CORR_WIDTH,right_her=THIS_HER,util=utility)
     # bits = decoder.decode_single_test(graph.toa_dist)
     og_bits = [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1]
+    
+    i = 0
+    while graph.rts_array[graph.other_point] > graph.rts_array[i]:
+        i += 1
+    
+    graph.success_pkt = i
     
     print("fs: {}\ntb: {}\nog: {}".format(found,tbits,og_bits))
     

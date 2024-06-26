@@ -15,7 +15,7 @@
         "barker_code": [1,1,1,-1,-1,-1,1,-1,-1,1,-1],
         "packet_length": 32,
         "correlation_std-dev_threshold": 2,
-        "correlation_window_grace": 8000
+        "correlation_window_grace": 300
     },
     "graph_utils": {
         "listen_mode_length": 100

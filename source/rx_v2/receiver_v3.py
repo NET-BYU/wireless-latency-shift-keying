@@ -12,6 +12,7 @@ import logging as l
 import numpy as np
 import matplotlib
 import datetime
+from copy import copy
 import queue
 import json
 import math
@@ -32,6 +33,36 @@ l.addLevelName(LOG_OPS,"Log Operations")
  - review the logging states and messages
  - wrap things in user-friendliness
 '''      
+class Packet:
+    def __init__(self,seq: int = None, tin: float = None, tout: float = None, rtt: float = None):
+        self.s = seq
+        self.i = tin
+        self.o = tout
+        self.r = rtt
+    def __eq__(self, value: 'Packet') -> bool:
+        return self.s == value.s
+    def __str__(self) -> str:
+        return f"PKT-{self.s}"
+
+class Bucket:
+    def __init__(self,mil: int = None, pkts: int = None):
+        self.m = mil
+        self.c = pkts
+    def __eq__(self, value: 'Bucket') -> bool:
+        return self.m == value.m
+    def __str__(self) -> str:
+        return f"BKT-{self.m}"
+
+class Message:
+    def __init__(self, tstamp: float = None, msg: list = [], length: int = 0, valid: bool = False):
+        self.timestamp = tstamp
+        self.message = msg
+        self.msg_len = length
+        self.valid = valid
+    def __eq__(self, value: 'Message') -> bool:
+        return (self.timestamp == value.timestamp) and (self.timestamp != None)
+    def __str__(self) -> str:
+        return ''.join(map(str,self.message)) if self.msg_len > 0 else '<empty>'
 
 class WlskReceiver:
     '''
@@ -78,11 +109,11 @@ class WlskReceiver:
         
         # Variable              | Type                  | Initial Value | Description and Units
         self.isInitalized:      bool                    = False         # did all the variables get configured properly
-        self.doLoggingUtil:     bool                    = False         # determined by kwargs to run logger or not.
+        self.isLogging:         bool                    = False         # determined by kwargs to run logger or not.
         # KWARGS (from __init__)
         self.MODE:              self.Mode               = mode          # the receiver's mode of operation.
         self.CONFIG:            string                  = config_path   # path to the receiver's active configuration.
-        self.input_file:        string                  = None          # Kwarg for setting input file in readfile mode.
+        self.input_path:        string                  = None          # Kwarg for setting input file in readfile mode.
         self.output_path:       string                  = None          # Kwarg for setting output path for graphs / listen mode.
         self.logToFile:         bool                    = False         # Kwarg for enabling file logging.
         self.logToConsole:      bool                    = False         # Kwarg for enabling console logging.
@@ -95,7 +126,7 @@ class WlskReceiver:
         self.quiet:             bool                    = False         # Kwarg for disabling output entirely.
         self.debugEnabled:      bool                    = False
         # LOGGING
-        self.path_raw_csv:      string                  = None          # filepath for raw ping data
+        self.path_pkt_csv:      string                  = None          # filepath for raw ping data
         self.path_bukt_csv:     string                  = None          # filepath for bucketed millisecond data
         self.path_logfile:      string                  = None          # filepath for logging output
         # RX_PARAMS
@@ -129,18 +160,18 @@ class WlskReceiver:
         # MULTIPROCESSING VALUES
         self._global_start                  = mlti.Event()              # indicates processes are ready     | Set by pinger
         self._global_stop                   = mlti.Event()              # indicates receiver should stop    | Set by any
-        self._raw_pkt_queue                 = mlti.Queue()              # Queue for holding untouched pkts  | between sniffer and bucketer
-        self._FSM_bucket_queue              = mlti.Queue()              # Queue for holding ms buckets      | between bucketer and FSM
+        self._pkt_queue                 = mlti.Queue()              # Queue for holding untouched pkts  | between sniffer and bucketer
+        self._bkt_queue              = mlti.Queue()              # Queue for holding ms buckets      | between bucketer and FSM
         self._message_queue                 = mlti.Queue()              # Queue for holding complete msgs   | between FSM and front end
         self._characterizer_queue           = mlti.Queue()              # Queue for characterizer to use    | between FSM and characterizer
-        self._save_raw_queue                = mlti.Queue()              # Queue for saving raw packets      | between sniffer and logger
-        self._save_milli_queue              = mlti.Queue()              # Queue for live graph to use       | between FSM and logger
+        self._pkt_log                = mlti.Queue()              # Queue for saving raw packets      | between sniffer and logger
+        self._bkt_log              = mlti.Queue()              # Queue for live graph to use       | between FSM and logger
         self._global_noise                  = mlti.Value('i',1)         # global noise value for msg detect | Set by characterizer
         self._global_time                   = mlti.Value('d',1.0)       # global time for bucketing time    | Set by pinger
 
         # KWARG ARGUMENT PARSING
         # Get a list of the allowed parameters
-        allowed_keys = ['input_file','output_path','doLivePlot',
+        allowed_keys = ['input_path','output_path','doLivePlot',
                         'doBeaconSniffs','verbose','quiet',
                         'logToFile','logToConsole','logPackets',
                         'logBuckets','logAll','debugEnabled']
@@ -154,7 +185,7 @@ class WlskReceiver:
         
         # INVALID COMBOS OF KWARGS
         # Being in a listening mode and giving an input file
-        if mode != self.Mode.READFILE and self.input_file != None:
+        if mode != self.Mode.READFILE and self.input_path != None:
             raise SyntaxError("WLSK Error: cannot take an input file (-i) unless in file mode (-m readfile)")
         # Being in readfile mode and giving an output file
         if mode == self.Mode.READFILE and self.output_path != None:
@@ -182,13 +213,13 @@ class WlskReceiver:
             raise SyntaxError("WLSK Error: cannot specify file logging (-lf) without an output path (-o [path])")
         
         if self.doLivePlot:
-            self.doLoggingUtil = True
+            self.isLogging = True
             
         if self.output_path != None:
-            self.path_logfile, self.path_raw_csv, self.path_bukt_csv = self.__output_setup()
-            self.doLoggingUtil = True
+            self.path_logfile, self.path_pkt_csv, self.path_bukt_csv = self.__output_setup()
+            self.isLogging = True
         
-        
+        # TODO: rewrite the bits that determine logging, with the new -xvf format.
         # SETUP THE LOGGING
         logLevel = l.DEBUG if self.verbose else l.INFO
         self.l = l.getLogger(__name__)
@@ -223,7 +254,7 @@ class WlskReceiver:
             self.processes.append((self.PName.PINGER,mlti.Process(target= self._send_wlsk_pings)))
             self.processes.append((self.PName.SNIFFER,mlti.Process(target= self._sniff_wlsk_packets)))
             # put listen only util here???
-        if self.doLoggingUtil:
+        if self.isLogging:
             self.processes.append((self.PName.LOGGER,mlti.Process(target= self._logging_utility)))
         if self.doBeaconSniffs:
             self.processes.append((self.PName.BEACON,mlti.Process(target= self._beacon_sniffer)))
@@ -311,7 +342,7 @@ class WlskReceiver:
         if clean:
             self._global_stop.set()
             self.l.info("WLSK-HEAD: waiting for queues to flush...")
-            while not self._save_raw_queue.empty() or not self._save_milli_queue.empty():
+            while not self._pkt_log.empty() or not self._bkt_log.empty():
                 time.sleep(0.5)
             self.l.info("WLSK-HEAD: queues flushed, exiting...")
         else:
@@ -352,7 +383,33 @@ class WlskReceiver:
     def hasMessage(self) -> bool:
         '''returns true or false to indicate if the receiver has a message ready.'''
         return not self._message_queue.empty()
-    
+
+    def _read_from_file(self) -> None:
+        try:
+            filename = os.path.join(self.input_path,"buckets.csv")
+            with open(filename, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+
+                while True:
+                    try:
+                        mili = next(reader)
+                        pkts = next(reader)
+                        bucket = Bucket(mili,pkts)
+                        self._bkt_queue.put(bucket)
+                    except StopIteration:
+                        break
+
+        except FileNotFoundError:
+            self.l.error(f"WLSK Error: cannot open \n{filename}\n; path does not exist or the file was not found.")
+            self._global_stop.set()
+        
+        else:
+            self.l.info("WLSK-READ: all the buckets have been read from the file. The program will shutdown a few seconds after the FSM finishes.")
+            while not self._bkt_queue.empty():
+                time.sleep(0.5)
+            time.sleep(10)
+            self._global_stop.set()
+
     def _send_wlsk_pings(self) -> None:
         self.l.info("WLSK-PING: Beginning pinger; intvl: {}; ip: {}".format(self.ping_interval,self.TARGET_IP))
         
@@ -426,11 +483,12 @@ class WlskReceiver:
                             # not sure why he puts this here?
                             pkt_list[2][ackR] = -.01
                             
-                        # send it:     pkt #, outgoing time,     incoming time,     flight time
-                        packaged_pkt = (ackR, pkt_list[0][ackR], pkt_list[1][ackR], pkt_list[2][ackR])
-                        self._raw_pkt_queue.put(packaged_pkt)
-                        if self.logPackets:
-                            self._save_raw_queue.put(packaged_pkt)
+                        # send it:           pkt #, outgoing time,     incoming time,     flight time
+                        packaged_pkt = Packet(ackR, pkt_list[0][ackR], pkt_list[1][ackR], pkt_list[2][ackR])
+                        if self.MODE == self.Mode.NORMAL:
+                            self._pkt_queue.put(packaged_pkt)
+                        if self.MODE == self.Mode.LISTENONLY or self.logPackets:
+                            self._pkt_log.put(packaged_pkt)
                         
                         # remove the packet from the listing to avoid clutter
                         for pkt_dict in pkt_list:
@@ -465,43 +523,44 @@ class WlskReceiver:
         
         # Setup Vars    
         state:    bState  = bState.INIT
-        curr_mil: int     = 0
-        curr_ct:  int     = 0
         pkt_info: tuple   = None
         pkt_time: int     = 0
         
+        # TODO: add the timer for the LISTEN ONLY Mode so you know when to stop
         while not self._global_stop.is_set():
             match (state):
                 case bState.INIT:
                     try:
-                        pkt_info = self._raw_pkt_queue.get(timeout=0.1)
+                        pkt_info = self._pkt_queue.get(timeout=0.1)
                     except queue.Empty:
                         continue
                     else:
-                        curr_mil = math.floor(pkt_info[2] * 1000)
-                        curr_ct = 0
+                        bucket = Bucket()
+                        bucket.m = math.floor(pkt_info[2] * 1000)
+                        bucket.c = 0
                         state = bState.LOAD
                 case bState.LOAD:
                     try:
-                        pkt_info = self._raw_pkt_queue.get(timeout=0.1)
+                        pkt_info = self._pkt_queue.get(timeout=0.1)
                     except queue.Empty:
                         continue
                     else:
                         pkt_time = math.floor(pkt_info[2] * 1000)
                         state = bState.SLOT                
                 case bState.SLOT:
-                    if pkt_time <= curr_mil:
-                        curr_ct += 1
+                    if pkt_time <= bucket.m:
+                        bucket.c += 1
                         state = bState.LOAD
                     else:
                         state = bState.SEND
                 case bState.SEND:
-                    mil_info = (curr_mil,curr_ct)
-                    self._FSM_bucket_queue.put(mil_info)
-                    if self.logBuckets or self.doLivePlot:
-                        self._save_milli_queue.put(mil_info)
-                    curr_mil += 1
-                    curr_ct = 0
+                    bkt_copy = copy(bucket)
+                    if self.MODE == self.Mode.NORMAL:
+                        self._bkt_queue.put(bkt_copy)
+                    if self.MODE == self.Mode.LISTENONLY or self.logBuckets:
+                        self._bkt_log.put(bkt_copy)
+                    bucket.m += 1
+                    bucket.c = 0
                     state = bState.SLOT
             # self.l.debug(f"pkt: {pkt_info[0]:05d}\tout: {pkt_info[1]}\tin: {pkt_info[2]}\tflight: {pkt_info[3]}")
             
@@ -533,16 +592,18 @@ class WlskReceiver:
                     hasGaps = False
                     strongCorr = False
                     msgDone = False
+                    sync_index = 0
                     message = []
                     sync_window = deque()
                     curr_time = 0
+                    bit_num = 1
                     state = dState.LOAD
 
                 case dState.LOAD:
                     # how to get x packets :)
-                    WINDOW_SIZE = 3900
+                    WINDOW_SIZE = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
                     try:
-                        packet = self._FSM_bucket_queue.get(timeout=1)
+                        packet = self._bkt_queue.get(timeout=1)
                     except queue.Empty:
                         continue
                     
@@ -554,7 +615,7 @@ class WlskReceiver:
 
                 case dState.SHFT:
                     try:
-                        packet = self._FSM_bucket_queue.get(timeout=1)
+                        packet = self._bkt_queue.get(timeout=1)
                     except queue.Empty:
                         continue
                     
@@ -567,8 +628,8 @@ class WlskReceiver:
                     pass
                         
                 case dState.NCHK:
-                    time.sleep(0.5)
                     # TODO: Actually do something here
+                    isNoisy = True
                     if isNoisy:
                         state = dState.GCHK
                     else:
@@ -576,37 +637,45 @@ class WlskReceiver:
                 
                 case dState.GCHK:
                     # TODO: Actually do something here
+                    hasGaps = True
                     if hasGaps:
                         state = dState.CORR
                     else:
                         state = dState.SHFT
                 
                 case dState.CORR:
-                    # TODO: Actually do something here (do these need to be separate states?)
+                    # TODO: Actually do something here
+                    # TODO: decide on new window size for smaller windows (?)
+                    sync_index = self.__correlate(list(sync_window),self.SYNC_WORD,window_size=75)
+                    strongCorr = True
                     if strongCorr:
                         state = dState.MSGL
                     else:
                         state = dState.SHFT
                 
                 case dState.MSGL:
-                    WINDOW_SIZE = 1000 # TODO: Calculate Barker sized window
+                    BARKER_SIZE = 1000 # TODO: Calculate Barker sized window
+                    # TODO: Figure out how to center the sync_index value
+                    # NOTE: Should I just do a message size window after all?
+                    # calculated at runtime. It wouldn't affect performance, 
+                    # but it would simplify the state machine a lot.
                     try:
-                        packet = self._FSM_bucket_queue.get(timeout=1)
+                        packet = self._bkt_queue.get(timeout=0.1)
                     except queue.Empty:
                         continue
                     
                     curr_time = packet[0]
                     sync_window.append(packet[1])
                     
-                    if len(sync_window) >= WINDOW_SIZE:
+                    if len(sync_window) >= WINDOW_SIZE + BARKER_SIZE * bit_num:
                         state = dState.MSGD
                 
                 case dState.MSGD:
-                    bit = 0
                     # TODO: Actually read the bit and put it in a message
+                    bit = 0
                     message.append(bit)
-                    if msgDone:
-                        self._message_queue.put(message)
+                    if len(message) == self.packet_len:
+                        self._message_queue.put(copy(message))
                         message = []
                         state = dState.LOAD
                     else:
@@ -634,93 +703,140 @@ class WlskReceiver:
         self._global_start.wait()
         time.sleep(0.1)
         self.l.info("WLSK-LOGY: Beginning packet log process")
+       
+        global_mil = math.floor(self._global_time.value * 1000)
         
-        # PACKET LOGGING THREAD
-        if self.logPackets:
-            def generate_save_data():
-                while not self._global_stop.is_set() or not self._save_raw_queue.empty():
+        def generate_save_data():
+            while not self._global_stop.is_set() or not self._pkt_log.empty() or not self._bkt_log.empty():
+                if self.logPackets:
                     try:
-                        raw_data = self._save_raw_queue.get(timeout=1)
+                        raw_data = self._pkt_log.get(timeout=0.1)
                     except queue.Empty:
                         pass
-                    with open(self.path_raw_csv,'a') as file:
-                        writer = csv.writer(file)
-                        for item in raw_data:
-                            writer.writerow([item]) 
-                return
-            
-            save_thread = threading.Thread(target=generate_save_data)
-            save_thread.daemon = True
-            save_thread.start()
-        
-        # BUCKET LOGGING AND LIVE GRAPH THREAD
-        if self.logBuckets or self.doLivePlot:    
-            def generate_data():
-                while not self._global_stop.is_set()or not self._save_milli_queue.empty():
-                    try:
-                        mil_info = self._save_milli_queue.get(timeout=1)
-                    except queue.Empty:
-                        continue
-                    if self.doLivePlot:
-                        liveplotfeed.put(mil_info)
-                    if self.logBuckets:
-                        with open(self.path_bukt_csv,'a') as file:
+                    else:
+                        with open(self.path_pkt_csv,'a') as file:
                             writer = csv.writer(file)
-                            for item in mil_info:
-                                writer.writerow([item])
-                return
-            
-            data_thread = threading.Thread(target=generate_data)
-            data_thread.daemon = True
-            data_thread.start()
+                            for item in raw_data:
+                                writer.writerow([item]) 
+
+                if self.logBuckets:
+                    try:
+                        mil_info = self._bkt_log.get(timeout=0.1)
+                    except queue.Empty:
+                        pass
+                    else:
+                        if self.doLivePlot:
+                            live_bkt_feed.put(mil_info)
+                        if self.logBuckets:
+                            with open(self.path_bukt_csv,'a') as file:
+                                writer = csv.writer(file)
+                                for item in mil_info:
+                                    writer.writerow([item])
+                
+                # TODO: Put in a message logger block
+                # try:
+                #     raw_data = self._pkt_log.get(timeout=0.1)
+                # except queue.Empty:
+                #     pass
+                # else:
+                #     with open(self.path_raw_csv,'a') as file:
+                #         writer = csv.writer(file)
+                #         for item in raw_data:
+                #             writer.writerow([item]) 
+            return
+
+        # PACKET LOGGING THREAD: runs whenever something is being logged.
+        data_save_thread = threading.Thread(target=generate_save_data)
+        data_save_thread.daemon = True
+        data_save_thread.start()
         
-        if self.doLivePlot:   
-            liveplotfeed = queue.Queue()        
-            time_data = []
-            ppms_data = []
-            self.livefig, self.liveax = plt.subplots(figsize=(15, 6))
+        # TODO: Test the new Live plotter and debug the updater fcns.
+        # LIVE PLOTTER: If enabled, takes the logged info and displays it.
+        if self.doLivePlot:
+
+            # TODO: Move GraphObj into new file as virtual class, where each graph can instantiate an update fcn
+            class GraphObj:
+                def __init__(self,xsz=0,title="",xlab="",ylab="",axis=None,scroll=0,init_h=0) -> None:
+                    self.input = queue.Queue 
+                    self.xax: list = []
+                    self.yax: list = []
+                    self.ymin: int = init_h
+                    self.XSZ: int = xsz
+                    self.title: str = title
+                    self.xlab: str = xlab
+                    self.ylab: str = ylab
+                    self.axis: plt.Axes = axis
+                    self.scatter = None
+                    self.scroll = scroll
+
+                def initialize(self):
+                    self.axis.set_title("Real Time* Graph of Pings Per Millisecond")
+                    self.scatter = self.axis.scatter(self.xax,self.yax,s=2)
+                    self.axis.clear()
+                    self.axis.set_xlim(0,10)
+                    self.axis.set_ylim(0,15)
             
-            self.liveax.set_title("Real Time* Graph of Pings Per Millisecond")
-            scatter = self.liveax.scatter(time_data,ppms_data,s=2)
+                def update(self,frame):
+                    if self.input.qsize() >= 100:
+                        last_time = 0
+                        for _ in range(100):    
+                            mil_time, ppms = self.input.get()
+                            conv_time = mil_time - global_mil
+                            last_time = conv_time
+                            self.xax.append(conv_time)
+                            self.yax.append(ppms)
+                            if len(self.xax) > 1000:
+                                del self.xax[0]
+                                del self.yax[0]
+                        self.scatter.set_offsets(np.c_[self.xax,self.yax])
+                        self.axis.set_xlim(self.xax[0],max(1,last_time))
+                        self.axis.set_ylim(0,max(15,max(self.yax)))
+                        self.axis.set_xlabel('time (ms)')
+                        self.axis.set_ylabel('ppms (pings)')
+                        self.axis.set_xticks(np.arange(min(self.xax), max(self.xax), 100))
+                        self.axis.set_yticks(np.arange(min(self.yax), max(self.yax)+3, 1))
+                        self.axis.canvas.draw()
+
+            NUMBER_OF_GRAPHS = 2
+            graph_objs: list[GraphObj] = []
+            animatedFig, animatedAxes = plt.subplots(1,NUMBER_OF_GRAPHS,figsize=(15, 6))
             
-            def init():
-                self.liveax.clear()
-                self.liveax.set_xlim(0,10)
-                self.liveax.set_ylim(0,15)
-                return scatter,
-            
-            global_mil = math.floor(self._global_time.value * 1000)
-            def update(frame):
-                if liveplotfeed.qsize() >= 100:
-                    last_time = 0
-                    for _ in range(100):    
-                        mil_time, ppms = liveplotfeed.get()
-                        conv_time = mil_time - global_mil
-                        last_time = conv_time
-                        time_data.append(conv_time)
-                        ppms_data.append(ppms)
-                        # length = len(time_data)
-                        # if length >= 2 and ppms > 3:
-                        #     self.liveax.plot([time_data[-2],time_data[-1]],[ppms_data[-2],ppms_data[-1]],color='gray',linewidth=0.5)
-                        if len(time_data) > 1000:
-                            del time_data[0]
-                            del ppms_data[0]
-                    scatter.set_offsets(np.c_[time_data,ppms_data])
-                    self.liveax.set_xlim(time_data[0],max(1,last_time))
-                    self.liveax.set_ylim(0,max(15,max(ppms_data)))
-                    self.liveax.set_xlabel('time (ms)')
-                    self.liveax.set_ylabel('ppms (pings)')
-                    self.liveax.set_xticks(np.arange(min(time_data), max(time_data), 100))
-                    self.liveax.set_yticks(np.arange(min(ppms_data), max(ppms_data)+3, 1))
-                    self.livefig.canvas.draw()
-                return scatter,
-            
-            anime = animation.FuncAnimation(self.livefig, update, init_func=init, blit=True, interval=100) 
+            # Packet Graph:
+            graph_objs.append(GraphObj(
+                xsz= 500,
+                title= "Live Incoming Packet Log",
+                xlab= "pkt seq num",
+                ylab= "return time",
+                axis=animatedAxes[0],
+                scroll=50,
+                init_h=0.1
+            ))
+            # Bucket Graph:
+            graph_objs.append(GraphObj(
+                xsz= 1000,
+                title= "Live Bucket Log",
+                xlab= "milliseconds since start",
+                ylab= "num pkts received",
+                axis=animatedAxes[1],
+                scroll=100,
+                init_h=0.1
+            ))
+
+            def animate(frame):
+                for graph in graph_objs:
+                    graph.update()
+                    pass
+
+            for graph in graph_objs:
+                graph.initialize()
+
+            anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=100) 
 
             plt.show()   
         
-        # If you close the live view, the thread should stay alive...
-        while not self._global_stop.is_set():
+        # If you close the live view while active, the thread should stay alive for logging...
+        # TODO: Update this function to catch messages and (also add the general logging var)
+        while not self._global_stop.is_set() and (self.logBuckets or self.logPackets):
             time.sleep(1)
         
         self.l.info("WLSK-LOGY: ending packet log process")
@@ -749,18 +865,140 @@ class WlskReceiver:
         
         while not self._global_stop.is_set():
             time.sleep(1)
-            self.l.debug(f"WLSK-DEBG: queue sizes: raw: {self._raw_pkt_queue.qsize()} save-raw: {self._save_raw_queue.qsize()} bukt: {self._FSM_bucket_queue.qsize()} save-bukt: {self._save_milli_queue.qsize()} msg: {self._message_queue.qsize()}")
+            self.l.debug(f"WLSK-DEBG: queue sizes: raw: {self._pkt_queue.qsize()} save-raw: {self._pkt_log.qsize()} bukt: {self._bkt_queue.qsize()} save-bukt: {self._bkt_log.qsize()} msg: {self._message_queue.qsize()}")
         
         self.l.info("WLSK-DEBG: debug session has ended.")
         return        
+
+    def __code_upscaler(self, word, bitwidth = 102) -> list[int]:
+        # TODO: Determine the most accurate way to shape 1 and 0
+        upscaled_one = [1] * bitwidth
+        upscaled_zero = [-1] * bitwidth
+
+        # Composite the word into a new, huge upscaled word
+        new_word = [item for value in word for item in (upscaled_one if value == 1 else upscaled_zero)]
+        return new_word
+
+    def __correlate(self, raw_data, code,window_size):
+        # Shaping has been moved to __code_upscaler for testing
+        code_upscaled = self.__code_upscaler(code)
         
+        # TODO: Analyze the correlation function, either by changing shape or style
+        var_data = raw_data.rolling(window=window_size).var().bfill()
+        conv = np.correlate(var_data,code_upscaled,"full")
+
+        # Return the 0 mean correlate
+        return conv-conv.mean()
+    
+    def __sync_single_window(self, toa_dist):
+        # NOTE: The toa_dist is now a sync window instead of a whole message
+        toa_dist = toa_dist[0:]
+
+        # find the sync word in the raw data 
+        xcorr_sync = self.__correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
+
+        xcorr_barker = self.__correlate(raw_data=toa_dist, code=self.BARKER_WORD,window_size=75)
+
+        sync_index = np.argmax(xcorr_sync)
+        # TODO: Decide the best way to look at the sync thresholds.
+        # NOTE: This is the old code. Since this only picks the sync index, we don't care that much.
+        # # Find the first peak of sync word xcorr - this should be the sync word
+        # cutoff = 10000 #len(toa_dist) - self.SYNC_WORD_LENGTH - self.NUM_BITS_TO_DECODE * self.BARKER_LENGH
+        # sync_indices = np.where(xcorr_sync[:cutoff] > xcorr_sync.std()*2)[0]
+
+        # print("threshold for sync detect: {}".format(xcorr_sync.std()*2))
+        # print("cutoff is {}".format(cutoff))
+        
+        # if len(sync_indices) == 0:
+        #     print("Could not find the Sync Word\n")
+        #     return None
+
+        # sync_start = sync_indices[0] if xcorr_sync[sync_indices[0]] > xcorr_sync[sync_indices[np.argmax(xcorr_sync[sync_indices])]]*.5 else sync_indices[np.argmax(xcorr_sync[sync_indices])]
+        # print("Using Sync Word idx: {}".format(sync_start))
+        return sync_index
+
+    def __bit_decision(self):
+        # TODO: Implement this in a single use fcn
+        #   - Remove the bits that create all the windows (functionize for PSFM-MSGL?)
+        #   - Get rid of the for loop
+        #   - return it as a single bit in the PFSM
+        ones, _ = find_peaks(xcorr_barker, height = 500)
+        zeroes, _ = find_peaks(xcorr_barker * -1, height = 500)
+    
+        # Calculate Bit Decision X-values based on the sync word location.
+        timed_xcorr_bit_windows = []
+        ori_bit_windows = []
+        for bit in range(1, self.NUM_BITS_TO_DECODE+1):
+            xval = sync_start + self.BARKER_LENGTH * bit+5*bit
+            if xval < len(xcorr_barker):
+                timed_xcorr_bit_windows.append(xval)
+                ori_bit_windows.append(xval)
+
+        # Finally, make a bit decision at each of the bit window locations. 
+        bit_sequence = []
+        bit_x_vals = []
+        for index in range(len(timed_xcorr_bit_windows)):
+            # Handle case where we get off and are right next to a peak. 
+            grace = 200 if index == 0 else 150
+            point_to_evaluate = timed_xcorr_bit_windows[index]
+            nearby_options = np.arange(point_to_evaluate-grace, point_to_evaluate+grace)
+
+            # find the largest peak not just a peak
+            largest_index_value_pair = [abs(xcorr_barker[point_to_evaluate]),point_to_evaluate, 200]
+            
+            if index == 0:
+                for option in nearby_options:
+                    if (option != point_to_evaluate) and (option in ones ):
+                        if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/1.8)) or (abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]):
+                            largest_index_value_pair[0] = abs(xcorr_barker[option])
+                            largest_index_value_pair[1] = option
+                            largest_index_value_pair[2] = abs(point_to_evaluate -option)
+
+                    elif (option != point_to_evaluate) and (option in zeroes ):
+                        if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/2)) or abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]:
+                            largest_index_value_pair[0] = abs(xcorr_barker[option])
+                            largest_index_value_pair[1] = option
+                            largest_index_value_pair[2] = abs(point_to_evaluate -option)
+            elif abs(xcorr_barker[point_to_evaluate]) < 200:
+                
+                check_index = np.argmax(np.abs(xcorr_barker[nearby_options]))+nearby_options[0]
+
+                if abs(xcorr_barker[check_index]) > 2 * abs(xcorr_barker[largest_index_value_pair[1]]):
+                    largest_index_value_pair[1] = check_index
+                adjustment = largest_index_value_pair[1]-timed_xcorr_bit_windows[index]
+                timed_xcorr_bit_windows[index] += adjustment
+                print(index, adjustment, timed_xcorr_bit_windows[index])
+                for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
+                    timed_xcorr_bit_windows[adjust_index] += int(adjustment)
+
+            point_to_evaluate = largest_index_value_pair[1] # get the index that we found else it is still x
+
+            # adjust where we are sampling
+            adjustment = point_to_evaluate-timed_xcorr_bit_windows[index]
+            if index==0:
+                timed_xcorr_bit_windows[index] += adjustment
+                for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
+                    timed_xcorr_bit_windows[adjust_index] += int(adjustment/((i+2)**2))
+
+
+            if xcorr_barker[point_to_evaluate] > 0:
+                bit_sequence.append(1)
+            else:
+                bit_sequence.append(0)
+
+            bit_x_vals.append(point_to_evaluate)
+        
+        print("Eval X coordinates: {}\n".format(bit_x_vals))
+        return bit_sequence
+
 if __name__ == "__main__":
     
     import argparse as argp
     import signal
     
+    # This system prevents Ctr+C from being caught by all processes
     parent_pid = os.getpid()
-    
+
     def signal_handler(signal, frame, processes, pid):
         curr = os.getpid()
         if curr == pid:
@@ -770,12 +1008,15 @@ if __name__ == "__main__":
                 p[1].terminate()
             print("All processes terminated.")
             sys.exit(0)
-        
+
     def create_handler(processes ,pid):
         def handler(signal,frame):
             signal_handler(signal, frame, processes, pid)
         return handler
     
+    # TODO: Test this new process mover and see if references hold up
+    receiver: WlskReceiver = None
+    signal.signal(signal.SIGINT, create_handler(receiver.processes,parent_pid))
     
     parser = argp.ArgumentParser(description="interface for using the WLSK receiver.")
     
@@ -799,7 +1040,6 @@ if __name__ == "__main__":
     parser.add_argument('-la','--log-all',action='store_true',help="logs debugger output, packets, and buckets.")
     parser.add_argument('-lf','--log-to-file',action='store_true',help="writes the logs to a file.")
     parser.add_argument('-lc','--log-to-console',action='store_true',help="writes the logs to the console.")
-    
     parser.add_argument(
         '-l','--log',
         type=str,
@@ -813,10 +1053,15 @@ if __name__ == "__main__":
     if args.mode == 'listenonly': mode = WlskReceiver.Mode.LISTENONLY
     if args.mode == 'readfile': mode = WlskReceiver.Mode.READFILE
     
-    # Available kwargs: ['input_file','output_path','doLivePlot','doBeaconSniffs','verbose','quiet','log_to_console']
+    # From the class __init__ definition: (kwargs)
+    #
+    # allowed_keys = ['input_path','output_path','doLivePlot',
+    #                   'doBeaconSniffs','verbose','quiet',
+    #                   'logToFile','logToConsole','logPackets',
+    #                   'logBuckets','logAll','debugEnabled']
    
     receiver = WlskReceiver(args.config, mode,
-                            input_file=args.input_path,
+                            input_path=args.input_path,
                             output_path=args.output_path,
                             doLivePlot=args.show_live,
                             doBeaconSniffs=args.b,
@@ -828,8 +1073,6 @@ if __name__ == "__main__":
                             logBuckets=args.log_buckets,
                             logAll=args.log_all,
                             debugEnabled=args.debug)
-    
-    signal.signal(signal.SIGINT, create_handler(receiver.processes,parent_pid))
     
     receiver.start_receiver()
     

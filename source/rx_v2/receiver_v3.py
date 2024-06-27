@@ -7,13 +7,13 @@ import multiprocessing as mlti
 from collections import deque
 from enum import Enum, auto
 from scapy.all import *
+from copy import copy
 import pandas as pd
 import logging as l
 import numpy as np
 import matplotlib
 import datetime
-from copy import copy
-import queue
+import queue as q
 import json
 import math
 import csv
@@ -46,23 +46,36 @@ class Packet:
 
 class Bucket:
     def __init__(self,mil: int = None, pkts: int = None):
-        self.m = mil
+        self.t = mil
         self.c = pkts
     def __eq__(self, value: 'Bucket') -> bool:
-        return self.m == value.m
+        return self.t == value.t
     def __str__(self) -> str:
-        return f"BKT-{self.m}"
+        return f"BKT-{self.t}"
+    def __iter__(self):
+        yield self.t
+        yield self.c
 
 class Message:
     def __init__(self, tstamp: float = None, msg: list = [], length: int = 0, valid: bool = False):
         self.timestamp = tstamp
         self.message = msg
-        self.msg_len = length
+        self.len = length
         self.valid = valid
+    def add_bit(self,bit: int):
+        self.message.append(bit)
+        self.len += 1
+    def validate(self,preamble: list[int]):
+        self.valid = (''.join(map(str,preamble)) == str(self))
+        return self.valid
+    def __bool__(self):
+        return self.valid
+    def __len__(self):
+        return self.len
     def __eq__(self, value: 'Message') -> bool:
         return (self.timestamp == value.timestamp) and (self.timestamp != None)
     def __str__(self) -> str:
-        return ''.join(map(str,self.message)) if self.msg_len > 0 else '<empty>'
+        return ''.join(map(str,self.message)) if self.len > 0 else '<empty>'
 
 class WlskReceiver:
     '''
@@ -160,12 +173,12 @@ class WlskReceiver:
         # MULTIPROCESSING VALUES
         self._global_start                  = mlti.Event()              # indicates processes are ready     | Set by pinger
         self._global_stop                   = mlti.Event()              # indicates receiver should stop    | Set by any
-        self._pkt_queue                 = mlti.Queue()              # Queue for holding untouched pkts  | between sniffer and bucketer
-        self._bkt_queue              = mlti.Queue()              # Queue for holding ms buckets      | between bucketer and FSM
+        self._pkt_queue                     = mlti.Queue()              # Queue for holding untouched pkts  | between sniffer and bucketer
+        self._bkt_queue                     = mlti.Queue()      # Queue for holding ms buckets      | between bucketer and FSM
         self._message_queue                 = mlti.Queue()              # Queue for holding complete msgs   | between FSM and front end
         self._characterizer_queue           = mlti.Queue()              # Queue for characterizer to use    | between FSM and characterizer
-        self._pkt_log                = mlti.Queue()              # Queue for saving raw packets      | between sniffer and logger
-        self._bkt_log              = mlti.Queue()              # Queue for live graph to use       | between FSM and logger
+        self._pkt_log                       = mlti.Queue()              # Queue for saving raw packets      | between sniffer and logger
+        self._bkt_log                       = mlti.Queue()              # Queue for live graph to use       | between FSM and logger
         self._global_noise                  = mlti.Value('i',1)         # global noise value for msg detect | Set by characterizer
         self._global_time                   = mlti.Value('d',1.0)       # global time for bucketing time    | Set by pinger
 
@@ -318,7 +331,18 @@ class WlskReceiver:
             self.l.info("WLSK-HEAD: Receiver initialized successfully.")
             self.isInitalized = True
         return self.isInitalized
-    
+
+    def __output_setup(self) -> tuple:
+        if not os.path.exists(self.output_path):
+            raise ValueError(f"WLSK: Output path '{self.output_path}' does not exist or is not a valid path.")
+        timestamp = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
+        new_dir = os.path.join(self.output_path, f"WLSK_{timestamp}")
+        os.makedirs(new_dir, exist_ok=True)
+        log_path = os.path.join(new_dir, 'log.log')
+        raw_csv_path = os.path.join(new_dir, 'raw.csv')
+        buckets_csv_path = os.path.join(new_dir, 'buckets.csv')
+        return (log_path, raw_csv_path, buckets_csv_path)
+
     def start_receiver(self) -> None:
         '''starts a receiver that has been initialized but isn't running.'''
         if not self.isInitalized:
@@ -376,7 +400,7 @@ class WlskReceiver:
         '''attempts to grab a message from the message queue. After 'timeout' seconds it will return None instead.'''
         try:
             return self._message_queue.get(timeout=timeout)
-        except queue.Empty:
+        except q.Empty:
             self.l.debug(f"WLSK-HEAD: grab_message timed out after {timeout} seconds.")
             return None
     
@@ -532,23 +556,23 @@ class WlskReceiver:
                 case bState.INIT:
                     try:
                         pkt_info = self._pkt_queue.get(timeout=0.1)
-                    except queue.Empty:
+                    except q.Empty:
                         continue
                     else:
                         bucket = Bucket()
-                        bucket.m = math.floor(pkt_info[2] * 1000)
+                        bucket.t = math.floor(pkt_info[2] * 1000)
                         bucket.c = 0
                         state = bState.LOAD
                 case bState.LOAD:
                     try:
                         pkt_info = self._pkt_queue.get(timeout=0.1)
-                    except queue.Empty:
+                    except q.Empty:
                         continue
                     else:
                         pkt_time = math.floor(pkt_info[2] * 1000)
                         state = bState.SLOT                
                 case bState.SLOT:
-                    if pkt_time <= bucket.m:
+                    if pkt_time <= bucket.t:
                         bucket.c += 1
                         state = bState.LOAD
                     else:
@@ -559,7 +583,7 @@ class WlskReceiver:
                         self._bkt_queue.put(bkt_copy)
                     if self.MODE == self.Mode.LISTENONLY or self.logBuckets:
                         self._bkt_log.put(bkt_copy)
-                    bucket.m += 1
+                    bucket.t += 1
                     bucket.c = 0
                     state = bState.SLOT
             # self.l.debug(f"pkt: {pkt_info[0]:05d}\tout: {pkt_info[1]}\tin: {pkt_info[2]}\tflight: {pkt_info[3]}")
@@ -572,6 +596,22 @@ class WlskReceiver:
         self._global_start.wait()
         self.l.info("WLSK-PFSM: Beginning PFSM process")
 
+        pQueue: q.PriorityQueue[Bucket] = q.PriorityQueue()
+        
+
+        def bucket_gather():
+            tbkt: Bucket = None
+            while not self._global_stop.is_set():
+                try:
+                    tbkt = self._bkt_queue.get(timeout=1)
+                except q.Empty:
+                    continue
+                pQueue.put(tbkt)
+        
+        gather_thread = threading.Thread(target=bucket_gather)
+        gather_thread.daemon = True
+        gather_thread.start()
+
         class dState(Enum):
             INIT = auto()
             LOAD = auto()
@@ -581,55 +621,54 @@ class WlskReceiver:
             CORR = auto()
             MSGL = auto()
             MSGD = auto()
+            MSGE = auto()
 
-        state = dState.INIT
+        state: dState = dState.INIT
 
         while not self._global_stop.is_set():
             match (state):
                 case dState.INIT:
                     # setup goes here!
+                    SYNC_WIN_SIZE: int = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
+                    BITS_WIN_SIZE: int = math.ceil(102.4 * self.bark_word_len) # TODO: Calculate Barker sized window
+                    sync_window: deque[Bucket] = deque()
+                    bit_window: deque[Bucket] = deque()
+                    tmpQ: deque[Bucket] = deque()
+                    curr_bkt: Bucket = None
+                    message: Message = Message()
+                    sync_index: int = 0
                     isNoisy = False
                     hasGaps = False
                     strongCorr = False
-                    msgDone = False
-                    sync_index = 0
-                    message = []
-                    sync_window = deque()
-                    curr_time = 0
-                    bit_num = 1
                     state = dState.LOAD
 
                 case dState.LOAD:
-                    # how to get x packets :)
-                    WINDOW_SIZE = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
                     try:
-                        packet = self._bkt_queue.get(timeout=1)
-                    except queue.Empty:
+                        curr_bkt = pQueue.get(timeout=1)
+                    except q.Empty:
                         continue
-                    
-                    curr_time = packet[0]
-                    sync_window.append(packet[1])
-                    
-                    if len(sync_window) >= WINDOW_SIZE:
+                    # The front of the deque is earliest point in time
+                    sync_window.append(curr_bkt)
+                    if len(sync_window) >= SYNC_WIN_SIZE:
                         state = dState.NCHK
 
                 case dState.SHFT:
                     try:
-                        packet = self._bkt_queue.get(timeout=1)
-                    except queue.Empty:
+                        curr_bkt = pQueue.get(timeout=1)
+                    except q.Empty:
                         continue
-                    
-                    curr_time = packet[0]
+                    # Essentially scooting along by 1ms - old buckets are lost
                     sync_window.popleft()
-                    sync_window.append(packet[1])
-                    # self.l.debug("WLSK-PFSM: Dist of deque: {}".format(curr_time - math.floor(self._global_time.value * 1000)))
+                    sync_window.append(curr_bkt)
                     
                     state = dState.NCHK
-                    pass
                         
                 case dState.NCHK:
                     # TODO: Actually do something here
+                    #-------------#
                     isNoisy = True
+                    #-------------#
+
                     if isNoisy:
                         state = dState.GCHK
                     else:
@@ -637,57 +676,102 @@ class WlskReceiver:
                 
                 case dState.GCHK:
                     # TODO: Actually do something here
+                    #-------------#
                     hasGaps = True
+                    #-------------#
+
                     if hasGaps:
                         state = dState.CORR
                     else:
                         state = dState.SHFT
                 
                 case dState.CORR:
-                    # TODO: Actually do something here
-                    # TODO: decide on new window size for smaller windows (?)
-                    sync_index = self.__correlate(list(sync_window),self.SYNC_WORD,window_size=75)
+                    # TODO: Change the sync window fcn to have good flow and optimize
+                    #-------------#
+                    sync_index = self.sync_single_window(list(sync_window))
                     strongCorr = True
+                    #-------------#
+
+
                     if strongCorr:
+                        # after receiving index, we assume that the bit window should start on
+                        # the sync edge. Therefore, we push the buckets after the sync word
+                        # back into the Queue for use in the bucket windows.
+                        while sync_index > sync_window[-1].t:
+                            pQueue.put(sync_window.pop())
                         state = dState.MSGL
                     else:
                         state = dState.SHFT
                 
+                # MSGL - Message Load. Takes in a set of buckets equal to the size of a bit decision window.
                 case dState.MSGL:
-                    BARKER_SIZE = 1000 # TODO: Calculate Barker sized window
-                    # TODO: Figure out how to center the sync_index value
-                    # NOTE: Should I just do a message size window after all?
-                    # calculated at runtime. It wouldn't affect performance, 
-                    # but it would simplify the state machine a lot.
                     try:
-                        packet = self._bkt_queue.get(timeout=0.1)
-                    except queue.Empty:
+                        curr_bkt = pQueue.get(timeout=1)
+                    except q.Empty:
                         continue
                     
-                    curr_time = packet[0]
-                    sync_window.append(packet[1])
+                    bit_window.append(curr_bkt)
                     
-                    if len(sync_window) >= WINDOW_SIZE + BARKER_SIZE * bit_num:
+                    if len(bit_window) >= BITS_WIN_SIZE:
                         state = dState.MSGD
                 
+                # MSGD - Message Decode. Perform the bit decision operation and add the result to the message.
                 case dState.MSGD:
                     # TODO: Actually read the bit and put it in a message
-                    bit = 0
-                    message.append(bit)
-                    if len(message) == self.packet_len:
-                        self._message_queue.put(copy(message))
-                        message = []
-                        state = dState.LOAD
-                    else:
+                    #-------------#
+                    # check if len() needs a + 1 or if its 0 indexed
+                    bit = self.bit_decision(sync_index,list(bit_window),message.len)
+                    #-------------#
+
+                    message.add_bit(bit)
+                    # TODO: Parameterize the preamble detection
+                    preamble = [1,0,1,0,1,0]
+
+                    # Save the info of the first few bits in case the message isn't valid
+                    if message.len < len(preamble):
+                        tmpQ.extend(bit_window)
                         state = dState.MSGL
-                
+                        
+                    # At the end of the preamble, validate the message integrity
+                    elif message.len == len(preamble):
+                        message.validate(preamble)
+                        if message.valid:                           
+                            state = dState.MSGL # finish the message
+                            tmpQ.clear()
+                        else:
+                            state = dState.MSGE # clear the TMP Q and try again
+                            while bit_window:
+                                tmpQ.put(bit_window.pop())
+
+                    # All bits afterwards don't need to be saved
+                    elif message.len < self.packet_len: 
+                        state = dState.MSGL
+                    
+                    # if the message is finished (will have already been validated)
+                    elif message.len == self.packet_len:
+                        # TODO: Send message statistics to optional logger
+                        self._message_queue.put(message)
+                        message = Message()
+                        sync_window.clear()
+                        bit_window.clear()
+                        state = dState.LOAD
+
+
+                # MSGE - Message Error. Clear the message, and return to the search state
+                case dState.MSGE:
+                    # put the packets back in their queue.
+                    while tmpQ:
+                        pQueue.put(tmpQ.pop())
+                    message = Message()
+                    state = dState.LOAD
+
                 case _:
                     self.l.error(f"WLSK-PFSM: Reached illegal state!! state: {state}")
 
             pass
         self.l.info("WLSK-PFSM: ending PFSM process")
         return
-    
+
     def _characterizer(self) -> None:
         # wait for pinger to give the okay
         self._global_start.wait()
@@ -711,7 +795,7 @@ class WlskReceiver:
                 if self.logPackets:
                     try:
                         raw_data = self._pkt_log.get(timeout=0.1)
-                    except queue.Empty:
+                    except q.Empty:
                         pass
                     else:
                         with open(self.path_pkt_csv,'a') as file:
@@ -722,7 +806,7 @@ class WlskReceiver:
                 if self.logBuckets:
                     try:
                         mil_info = self._bkt_log.get(timeout=0.1)
-                    except queue.Empty:
+                    except q.Empty:
                         pass
                     else:
                         if self.doLivePlot:
@@ -736,7 +820,7 @@ class WlskReceiver:
                 # TODO: Put in a message logger block
                 # try:
                 #     raw_data = self._pkt_log.get(timeout=0.1)
-                # except queue.Empty:
+                # except q.Empty:
                 #     pass
                 # else:
                 #     with open(self.path_raw_csv,'a') as file:
@@ -757,7 +841,7 @@ class WlskReceiver:
             # TODO: Move GraphObj into new file as virtual class, where each graph can instantiate an update fcn
             class GraphObj:
                 def __init__(self,xsz=0,title="",xlab="",ylab="",axis=None,scroll=0,init_h=0) -> None:
-                    self.input = queue.Queue 
+                    self.input = q.Queue 
                     self.xax: list = []
                     self.yax: list = []
                     self.ymin: int = init_h
@@ -847,17 +931,6 @@ class WlskReceiver:
         self.l.warning("WLSK-HEAD: The beacon sniffer process is a deprecated part of WLSK, and will not run.")
         return
 
-    def __output_setup(self) -> tuple:
-        if not os.path.exists(self.output_path):
-            raise ValueError(f"WLSK: Output path '{self.output_path}' does not exist or is not a valid path.")
-        timestamp = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
-        new_dir = os.path.join(self.output_path, f"WLSK_{timestamp}")
-        os.makedirs(new_dir, exist_ok=True)
-        log_path = os.path.join(new_dir, 'log.log')
-        raw_csv_path = os.path.join(new_dir, 'raw.csv')
-        buckets_csv_path = os.path.join(new_dir, 'buckets.csv')
-        return (log_path, raw_csv_path, buckets_csv_path)
-
     def _DEBUG_PROCESS(self) -> None:
         self._global_start.wait()
         time.sleep(0.1)
@@ -870,34 +943,36 @@ class WlskReceiver:
         self.l.info("WLSK-DEBG: debug session has ended.")
         return        
 
-    def __code_upscaler(self, word, bitwidth = 102) -> list[int]:
+    def word_upscaler(self, word, bitwidth = 102) -> list[int]:
         # TODO: Determine the most accurate way to shape 1 and 0
+        #-------------#
         upscaled_one = [1] * bitwidth
         upscaled_zero = [-1] * bitwidth
+        #-------------#
 
         # Composite the word into a new, huge upscaled word
         new_word = [item for value in word for item in (upscaled_one if value == 1 else upscaled_zero)]
         return new_word
 
-    def __correlate(self, raw_data, code,window_size):
+    def correlate(self, raw_data, code,window_size):
         # Shaping has been moved to __code_upscaler for testing
-        code_upscaled = self.__code_upscaler(code)
+        code_upscaled = self.word_upscaler(code)
         
         # TODO: Analyze the correlation function, either by changing shape or style
+        #-------------#
         var_data = raw_data.rolling(window=window_size).var().bfill()
         conv = np.correlate(var_data,code_upscaled,"full")
+        #-------------#
 
         # Return the 0 mean correlate
         return conv-conv.mean()
     
-    def __sync_single_window(self, toa_dist):
+    def sync_single_window(self, toa_dist):
         # NOTE: The toa_dist is now a sync window instead of a whole message
         toa_dist = toa_dist[0:]
 
         # find the sync word in the raw data 
-        xcorr_sync = self.__correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
-
-        xcorr_barker = self.__correlate(raw_data=toa_dist, code=self.BARKER_WORD,window_size=75)
+        xcorr_sync = self.correlate(raw_data=toa_dist, code=self.SYNC_WORD,window_size=75)
 
         sync_index = np.argmax(xcorr_sync)
         # TODO: Decide the best way to look at the sync thresholds.
@@ -917,19 +992,26 @@ class WlskReceiver:
         # print("Using Sync Word idx: {}".format(sync_start))
         return sync_index
 
-    def __bit_decision(self):
+    def get_all_bit_points(self):
+        return
+
+    def bit_decision(self, sync_start, toa_dist, bit_num):
         # TODO: Implement this in a single use fcn
         #   - Remove the bits that create all the windows (functionize for PSFM-MSGL?)
         #   - Get rid of the for loop
         #   - return it as a single bit in the PFSM
+
+        # TODO: Analysis on the correlation function
+        xcorr_barker = self.correlate(raw_data=toa_dist, code=self.BARKER_WORD,window_size=75)
+
         ones, _ = find_peaks(xcorr_barker, height = 500)
         zeroes, _ = find_peaks(xcorr_barker * -1, height = 500)
     
         # Calculate Bit Decision X-values based on the sync word location.
         timed_xcorr_bit_windows = []
         ori_bit_windows = []
-        for bit in range(1, self.NUM_BITS_TO_DECODE+1):
-            xval = sync_start + self.BARKER_LENGTH * bit+5*bit
+        for bit in range(1, self.packet_len+1):
+            xval = sync_start + self.bark_word_len * bit+5*bit
             if xval < len(xcorr_barker):
                 timed_xcorr_bit_windows.append(xval)
                 ori_bit_windows.append(xval)

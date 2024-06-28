@@ -629,8 +629,8 @@ class WlskReceiver:
             match (state):
                 case dState.INIT:
                     # setup goes here!
-                    SYNC_WIN_SIZE: int = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
-                    BITS_WIN_SIZE: int = math.ceil(102.4 * self.bark_word_len) # TODO: Calculate Barker sized window
+                    self.SYNC_WIN_SIZE: int = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
+                    self.BITS_WIN_SIZE: int = math.ceil(102.4 * self.bark_word_len) # TODO: Calculate Barker sized window
                     sync_window: deque[Bucket] = deque()
                     bit_window: deque[Bucket] = deque()
                     tmpQ: deque[Bucket] = deque()
@@ -649,7 +649,7 @@ class WlskReceiver:
                         continue
                     # The front of the deque is earliest point in time
                     sync_window.append(curr_bkt)
-                    if len(sync_window) >= SYNC_WIN_SIZE:
+                    if len(sync_window) >= self.SYNC_WIN_SIZE:
                         state = dState.NCHK
 
                 case dState.SHFT:
@@ -712,7 +712,7 @@ class WlskReceiver:
                     
                     bit_window.append(curr_bkt)
                     
-                    if len(bit_window) >= BITS_WIN_SIZE:
+                    if len(bit_window) >= self.BITS_WIN_SIZE:
                         state = dState.MSGD
                 
                 # MSGD - Message Decode. Perform the bit decision operation and add the result to the message.
@@ -839,82 +839,61 @@ class WlskReceiver:
         if self.doLivePlot:
 
             # TODO: Move GraphObj into new file as virtual class, where each graph can instantiate an update fcn
-            class GraphObj:
-                def __init__(self,xsz=0,title="",xlab="",ylab="",axis=None,scroll=0,init_h=0) -> None:
-                    self.input = q.Queue 
-                    self.xax: list = []
-                    self.yax: list = []
-                    self.ymin: int = init_h
-                    self.XSZ: int = xsz
-                    self.title: str = title
-                    self.xlab: str = xlab
-                    self.ylab: str = ylab
-                    self.axis: plt.Axes = axis
-                    self.scatter = None
-                    self.scroll = scroll
+            from graphers import GraphObj
 
-                def initialize(self):
-                    self.axis.set_title("Real Time* Graph of Pings Per Millisecond")
-                    self.scatter = self.axis.scatter(self.xax,self.yax,s=2)
-                    self.axis.clear()
-                    self.axis.set_xlim(0,10)
-                    self.axis.set_ylim(0,15)
-            
-                def update(self,frame):
-                    if self.input.qsize() >= 100:
-                        last_time = 0
-                        for _ in range(100):    
-                            mil_time, ppms = self.input.get()
-                            conv_time = mil_time - global_mil
-                            last_time = conv_time
-                            self.xax.append(conv_time)
-                            self.yax.append(ppms)
-                            if len(self.xax) > 1000:
-                                del self.xax[0]
-                                del self.yax[0]
-                        self.scatter.set_offsets(np.c_[self.xax,self.yax])
-                        self.axis.set_xlim(self.xax[0],max(1,last_time))
-                        self.axis.set_ylim(0,max(15,max(self.yax)))
-                        self.axis.set_xlabel('time (ms)')
-                        self.axis.set_ylabel('ppms (pings)')
-                        self.axis.set_xticks(np.arange(min(self.xax), max(self.xax), 100))
-                        self.axis.set_yticks(np.arange(min(self.yax), max(self.yax)+3, 1))
-                        self.axis.canvas.draw()
-
-            NUMBER_OF_GRAPHS = 2
+            NUMBER_OF_GRAPHS = 3
             graph_objs: list[GraphObj] = []
-            animatedFig, animatedAxes = plt.subplots(1,NUMBER_OF_GRAPHS,figsize=(15, 6))
+            animatedFig, generatedAxes = plt.subplots(1,NUMBER_OF_GRAPHS,figsize=(15, 6))
             
             # Packet Graph:
-            graph_objs.append(GraphObj(
-                xsz= 500,
-                title= "Live Incoming Packet Log",
-                xlab= "pkt seq num",
-                ylab= "return time",
-                axis=animatedAxes[0],
-                scroll=50,
-                init_h=0.1
-            ))
+            # graph_objs.append(GraphObj(
+            #     xsz= 500,
+            #     title= "Live Incoming Packet Log",
+            #     xlab= "pkt seq num",
+            #     ylab= "return time",
+            #     axis=animatedAxes[0],
+            #     scroll=50,
+            #     init_h=0.1
+            # ))
+            
             # Bucket Graph:
             graph_objs.append(GraphObj(
                 xsz= 1000,
                 title= "Live Bucket Log",
                 xlab= "milliseconds since start",
                 ylab= "num pkts received",
-                axis=animatedAxes[1],
                 scroll=100,
                 init_h=0.1
+            ))
+            
+            # Sync Window Log:
+            graph_objs.append(GraphObj(
+                xsz=self.SYNC_WIN_SIZE,
+                title='Sync window',
+                xlab="index",
+                ylab="correlation",
+                init_h=20
+            ))
+            
+            # Bit Window Log:
+            graph_objs.append(GraphObj(
+                xsz=self.BITS_WIN_SIZE,
+                title='bit window',
+                xlab='millisecond',
+                ylab='packets received',
+                init_h=15
             ))
 
             def animate(frame):
                 for graph in graph_objs:
                     graph.update()
                     pass
-
-            for graph in graph_objs:
+             
+            for i, graph in enumerate(graph_objs):
+                graph.axis = generatedAxes[i]
                 graph.initialize()
 
-            anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=100) 
+            anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=250) 
 
             plt.show()   
         

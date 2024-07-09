@@ -7,12 +7,12 @@ import multiprocessing as mlti
 from collections import deque
 from enum import Enum, auto
 from scapy.all import *
+from source.rx_v2.utility import *
 from copy import copy
 import pandas as pd
 import logging as l
 import numpy as np
 import typing as t
-import matplotlib
 import datetime
 import queue as q
 import json
@@ -34,57 +34,6 @@ l.addLevelName(LOG_OPS,"Log Operations")
  - review the logging states and messages
  - wrap things in user-friendliness
 '''      
-class Packet:
-    def __init__(self,seq: int = None, tin: float = None, tout: float = None, rtt: float = None):
-        '''WLSK Packet:
-        - seq: int - the sequence number of the packet
-        - tin: float - the time the packet '''
-        self.s = seq
-        self.i = tin
-        self.o = tout
-        self.r = rtt
-    def __eq__(self, value: 'Packet') -> bool:
-        return self.s == value.s
-    def __str__(self) -> str:
-        return f"PKT-{self.s}"
-    def __iter__(self):
-        yield self.s
-        yield self.o
-        yield self.i
-        yield self.r
-
-class Bucket:
-    def __init__(self,mil: int = None, pkts: int = None):
-        self.t = mil
-        self.c = pkts
-    def __eq__(self, value: 'Bucket') -> bool:
-        return self.t == value.t
-    def __str__(self) -> str:
-        return f"BKT-{self.t}"
-    def __iter__(self):
-        yield self.t
-        yield self
-
-class Message:
-    def __init__(self, tstamp: float = None, msg: list = [], length: int = 0, valid: bool = False):
-        self.timestamp = tstamp
-        self.message = msg
-        self.len = length
-        self.valid = valid
-    def add_bit(self,bit: int):
-        self.message.append(bit)
-        self.len += 1
-    def validate(self,preamble: list[int]):
-        self.valid = (''.join(map(str,preamble)) == str(self))
-        return self.valid
-    def __bool__(self):
-        return self.valid
-    def __len__(self):
-        return self.len
-    def __eq__(self, value: 'Message') -> bool:
-        return (self.timestamp == value.timestamp) and (self.timestamp != None)
-    def __str__(self) -> str:
-        return ''.join(map(str,self.message)) if self.len > 0 else '<empty>'
 
 class WlskReceiver:
     '''
@@ -183,7 +132,7 @@ class WlskReceiver:
         self._global_start                  = mlti.Event()              # indicates processes are ready     | Set by pinger
         self._global_stop                   = mlti.Event()              # indicates receiver should stop    | Set by any
         self._pkt_queue                     = mlti.Queue()              # Queue for holding untouched pkts  | between sniffer and bucketer
-        self._bkt_queue                     = mlti.Queue()      # Queue for holding ms buckets      | between bucketer and FSM
+        self._bkt_queue                     = mlti.Queue()              # Queue for holding ms buckets      | between bucketer and FSM
         self._message_queue                 = mlti.Queue()              # Queue for holding complete msgs   | between FSM and front end
         self._characterizer_queue           = mlti.Queue()              # Queue for characterizer to use    | between FSM and characterizer
         self._pkt_log                       = mlti.Queue()              # Queue for saving raw packets      | between sniffer and logger
@@ -285,6 +234,12 @@ class WlskReceiver:
 
         # attempt to load the initalizer. THIS DOES NOT VALIDATE ALL THE CONFIG ENTRIES (Should it?)
         self.initialize(self.CONFIG)
+        
+        # TODO: REMOVE DEBUG STUFF
+        self._vlines_sync = mlti.Queue()
+        self._bkt_comm = mlti.Queue()
+        self.SYNC_WIN_SIZE = mlti.Value('i',0)
+        self.BITS_WIN_SIZE = mlti.Value('i',0)
         
     def initialize(self,configuration: string) -> bool:
         '''run this funtion to load the parameters of the receiver based on a given config file.'''
@@ -482,7 +437,7 @@ class WlskReceiver:
         # this can be modified if you need it to be
         sniff_filter = f"tcp port {self.sport}"
         
-        pkt_list    = [{},{},{}]    # list of time in, time out, and rtt for each ping sent
+        pkt_list = [{},{},{}]    # list of time in, time out, and rtt for each ping sent
 
         # this is the function that actually determines whether we think it was a WLSK packet
         # https://scapy.readthedocs.io/en/latest/api/scapy.layers.inet.html#scapy.layers.inet.TCP
@@ -567,13 +522,13 @@ class WlskReceiver:
                     pkt_info = self.qGet(self._pkt_queue)
                     
                     bucket = Bucket()
-                    bucket.t = math.floor(pkt_info.o * 1000)
+                    bucket.t = math.floor(pkt_info.i * 1000)
                     bucket.c = 0
                     state = bState.LOAD
                 case bState.LOAD:
                     pkt_info = self.qGet(self._pkt_queue)
                     
-                    pkt_time = math.floor(pkt_info.o * 1000)
+                    pkt_time = math.floor(pkt_info.i * 1000)
                     state = bState.SLOT                
                 case bState.SLOT:
                     if pkt_time <= bucket.t:
@@ -585,7 +540,7 @@ class WlskReceiver:
                     bkt_copy = copy(bucket)
                     if self.MODE == self.Mode.NORMAL:
                         self._bkt_queue.put(bkt_copy)
-                    if self.MODE == self.Mode.LISTENONLY or self.logBuckets:
+                    if self.logBuckets or self.doLivePlot:
                         self._bkt_log.put(bkt_copy)
                     bucket.t += 1
                     bucket.c = 0
@@ -595,8 +550,22 @@ class WlskReceiver:
         self.l.info("WLSK-BUKT: ending bucketer process")
         return
 
+# Hey Chris - start here. Ignore everything above.
+# Here is the workflow to this point:
+# _send_wlsk_pings sends pings which are sniffed by _sniff_wlsk_packets,
+# who sends those packets to _packet_bucketer, who then packs them into buckets.
+# The buckets are then passed out to the _decoder_PFSM via a mlti.Queue "self._bkt_queue,"
+# and this is point you will pick up at reading the code.
+# The comments should guide you more or less to what currently happens, as well as
+# where there are questionable elements / ideas for future. 
+
+# all the functions besides _decode_PFSM you should read will be marked 
+# with an anagram of either IGNORE or README.
+# gotta stay on your toes.
+# Good luck.
+
     def _decoder_PFSM(self) -> None:
-        # wait for pinger to give the okay
+        # wait for pinger process to give the okay
         self._global_start.wait()
         self.l.info("WLSK-PFSM: Beginning PFSM process")
 
@@ -606,17 +575,20 @@ class WlskReceiver:
         # message turns out to be a dud.
         pQueue: q.PriorityQueue[Bucket] = q.PriorityQueue()
         
-        # This thread runs behind the PFSM and turns the unorderd
-        # multiprocessing queue into a PQueue 
+        # This thread will run behind the PFSM and move the unordered
+        # mlti.Queue bkts into the PQueue - see utility.py for the 
+        # definition of the Bucket class (mostly just comparison operators)
+        # There is also a Packet class and a Message class 
+        # tbkt just means temporary bucket
         def bucket_gather():
-            tbkt: Bucket = None
             while not self._global_stop.is_set():
-                try:
-                    tbkt = self._bkt_queue.get(timeout=1)
-                except q.Empty:
-                    continue
+                # qGet is just a nice function for grabbing things out
+                # of my many queues. It solves the problem of blocking
+                # the multi processing syncing and stuff.
+                tbkt: Bucket = self.qGet(self._bkt_queue)
                 pQueue.put(tbkt)
         
+        # daemon mode helps it to die properly XP
         gather_thread = threading.Thread(target=bucket_gather)
         gather_thread.daemon = True
         gather_thread.start()
@@ -633,164 +605,243 @@ class WlskReceiver:
             MSGD = auto()
             MSGE = auto()
 
+        # anything that says self.l is a reference to the internal logger, and can be ignored.
+        self.l.debug(f"state: NONE -> INIT")
         state: dState = dState.INIT
-
+        # this list keeps track of the seen milliseconds we have synced at already, so we don't waste time
+        seen_idxs: list[int] = []
+        
         while not self._global_stop.is_set():
             match (state):
+                # INIT - Create all the variables and prepare for war
                 case dState.INIT:
                     # Calculate the size of the sync window and bit windows
-                    self.SYNC_WIN_SIZE: int = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
-                    self.BITS_WIN_SIZE: int = math.ceil(102.4 * self.bark_word_len) # TODO: Calculate Barker sized window
-                    # We use deques for easy "scooting"
+                    # These are initialized in the __init__ which has many, many
+                    # variables and much clutter. I redefine them here for now for clarity
+                    self.SYNC_WIN_SIZE.value = math.ceil(102.4 * self.sync_word_len + self.corr_grace)
+                    self.BITS_WIN_SIZE.value = math.ceil(102.4 * self.bark_word_len)
+                    
+                    # We define the windows as deques. This allows 
+                    # us to "scoot" very easily because we can use popleft()
                     sync_window: deque[Bucket] = deque()
                     bit_window: deque[Bucket] = deque()
-                    # This stores bit during the preamble
+                    
+                    # Before we know whether or not the preamble is valid, 
+                    # we have to keep storing the buckets. This deque stores
+                    # those buckets so we can push them back or discard them.
                     tmpQ: deque[Bucket] = deque()
-                    # The most recent bucket grabbed
+                    
+                    # This is the "feed" for the machine: The most recent bucket grabbed
                     curr_bkt: Bucket = None
+                    
                     # The current message being built
                     message: Message = Message()
-                    # The place the PFSM thinks the message starts
+                    
+                    # The place that currently the PFSM thinks the message starts
                     sync_index: int = 0
+                    
                     # TODO: Make sure this all gets replaced with real computation.
+                    # These are mostly placeholders for further filtering we do not currently do.
                     isNoisy = False
+                    eFlag = False
                     hasGaps = False
                     strongCorr = False
 
+                    # self.l.debug(f"state: INIT -> LOAD")
                     state = dState.LOAD
 
                 # LOAD - Loads the sync window until it is full.
                 case dState.LOAD:
-                    try:
-                        curr_bkt = pQueue.get(timeout=1)
-                    except q.Empty:
-                        continue
+                    # Again, this is always the most "recent" millisecond - 
+                    # i.e. first one not currently in the window.
+                    curr_bkt = self.qGet(pQueue)
+                    # self.l.debug(curr_bkt)
+                    
                     # The front of the deque is always the earliest point in time
                     sync_window.append(curr_bkt)
                     
-                    if len(sync_window) >= self.SYNC_WIN_SIZE:
-                        state = dState.NCHK
+                    # self.l.debug(f"sync: {len(sync_window)}")
+                    # If you have filled the sync window with enough buckets
+                    if len(sync_window) >= self.SYNC_WIN_SIZE.value:
+                        # the _bkt_comm is just to communicate with the grapher
+                        # you can ignore anything GraphComm related.
+                        self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t,0))
+                        # eFlag comes from the decode state - we will come back to it.
+                        # It's default value is False.
+                        if eFlag:
+                            # self.l.debug(f"state: LOAD -> SHFT")
+                            state = dState.SHFT
+                        else:
+                            # self.l.debug(f"state: LOAD -> NCHK")
+                            state = dState.NCHK
 
                 # SHFT - Shift. Scoots the sync window over by one bucket.
                 case dState.SHFT:
-                    try:
-                        curr_bkt = pQueue.get(timeout=1)
-                    except q.Empty:
-                        continue
-                    # Essentially scooting along by 1ms - old buckets are lost
-                    sync_window.popleft()
-                    sync_window.append(curr_bkt)
+                    # TODO: Configur-ify this var. We can choose how many buckets to shift by.
+                    # One seems too small since the beacons are 102 of them wide...
+                    # I have tried 10, 50, and 102, with little variance (except maybe processing speed? TBD)
+                    SHIFT_SIZE = 102
                     
+                    for _ in range(SHIFT_SIZE):
+                        # get a new bucket
+                        curr_bkt = self.qGet(pQueue)
+                        # Essentially scooting along by 1ms - old buckets are lost
+                        # because they have no message (hah losers)
+                        sync_window.popleft()
+                        sync_window.append(curr_bkt)
+                    self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t,0))
+                    # self.l.debug(f"state: SHFT -> NCHK")
                     state = dState.NCHK
                         
                 # NCHK - Noise Check. looks for a spike in the latency, signifying a signal.
                 case dState.NCHK:
                     # TODO: Actually do something here
+                    # In our original diagram, this was the first preprocessing stage. Phil
+                    # had talked to us about post-filtering with preambles so we never
+                    # decided how to implement this. It is a future consideration to be had.
                     #-------------#
                     isNoisy = True
-                    # TODO: This should set the value of a place for the window to scroll to,
-                    # such that you end up with a full window of 'noise' (sync hopefully)
                     #-------------#
 
+                    # All the 'checking' states will default to shift if they fail.
                     if isNoisy:
+                        # self.l.debug(f"state: NCHK -> GCHK")
                         state = dState.GCHK
                     else:
+                        # self.l.debug(f"state: NCHK -> SHFT")
                         state = dState.SHFT
                 
                 # GCHK - Gap check. checks to see if there is WLSK-esque spacing in the window.
                 case dState.GCHK:
                     # TODO: Actually do something here
+                    # This was originally our second layer of preprocessing. It would have looked
+                    # for the distinct gaps that we found in the sync word.
                     #-------------#
                     hasGaps = True
                     #-------------#
 
                     if hasGaps:
+                        # self.l.debug(f"state: GCHK -> CORR")
                         state = dState.CORR
                     else:
+                        # self.l.debug(f"state: GCHK -> GCHK")
                         state = dState.SHFT
                 
                 # CORR - correlate. Performs a correlation on the sync window.
                 case dState.CORR:
+                    # Between these lines is essentially the "drag and drop" section where 
+                    # the state machine just needs something that correlates and spits a 
+                    # location for us to start searching for preambles.
+                    # We also had talked about a layer of preprocessing with the
+                    # std deviations. I haven't implemented that yet.
                     #-------------#
-                    sync_index = self.sync_single_window(list(sync_window))
+                    sync_index = self.sync_single_window(pd.Series(sync_window)) # This should be a function you read
+                    
+                    # this is the millisecond that we are going to choose to decide what the buckets should be at
+                    # the reason it looks so complex is that I convert from raw UNIX time to milliseconds since
+                    # start of the program.
+                    sync_mil = sync_window[self.sync_word_len * 102 + sync_index - 1].t - math.floor(self._global_time.value * 1000) 
                     # TODO: What defines strong correlation?
-                    strongCorr = True
                     #-------------#
+                    
+                    # I was logging the millis for something; ignore
+                    # with open("./DEBUG.txt","a") as file:
+                    #     file.write(f"{sync_mil}\n")
 
-
-                    if strongCorr:
+                    # This should choose to shift if the point it wants to say 
+                    # was a sync word was already determined a failure
+                    if sync_index not in seen_idxs:
+                        seen_idxs.append(sync_index)
                         # after receiving index, we assume that the bit window should start on
-                        # the sync edge. Therefore, we push the buckets after the sync word
-                        # back into the Queue for use in the bucket windows.
+                        # the sync edge (which seemed to be what we saw in graph tests).
+                        # Therefore, we push the buckets after the sync word back into 
+                        # the main pQueue for use in the bucket windows.
                         while sync_index > sync_window[-1].t:
                             pQueue.put(sync_window.pop())
+                        
+                        self._bkt_comm.put((GraphComm.VLINES,[sync_mil],0))
+                        self.l.debug(f"Sync Time: {sync_mil}") # spit sync time
+                        # self.l.debug(f"state: CORR -> MSGL")
                         state = dState.MSGL
                     else:
+                        # self.l.debug(f"state: CORR -> SHFT")
+                        self.l.debug("--Reused idx - shifting--")
                         state = dState.SHFT
                 
                 # MSGL - Message Load. Takes in a set of buckets equal to the size of a bit decision window.
                 case dState.MSGL:
-                    try:
-                        curr_bkt = pQueue.get(timeout=1)
-                    except q.Empty:
-                        continue
+                    # This is an identical state to LOAD except with a different window and size
+                    curr_bkt = self.qGet(pQueue)
                     
                     bit_window.append(curr_bkt)
                     
-                    if len(bit_window) >= self.BITS_WIN_SIZE:
+                    if len(bit_window) >= self.BITS_WIN_SIZE.value:
+                        self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t,1))
+                        # self.l.debug(f"state: MSGL -> MSGD")
                         state = dState.MSGD
                 
                 # MSGD - Message Decode. Perform the bit decision operation and add the result to the message.
                 case dState.MSGD:
-                    # TODO: Actually read the bit and put it in a message
-                    #-------------#
-                    # check if len() needs a + 1 or if its 0 indexed
-                    bit = self.bit_decision(sync_index,list(bit_window),message.len)
-                    #-------------#
+                    # This function decides how a bit is determined, and you should read it.
+                    bit = self.bit_decision(pd.Series(bit_window),var_size=75)
 
+                    # put the bit in the message
                     message.add_bit(bit)
                     # TODO: Parameterize the preamble detection
-                    preamble = [1,0,1,0,1,0]
+                    # this is the preamble, and we will compare the message to it.
+                    preamble = Message(0,[1,0,1,0,1,0],False)
 
-                    # Save the info of the first few bits in case the message isn't valid
-                    if message.len < len(preamble):
+                    # Always save the info of the first few bits in case the message isn't valid
+                    if message.len < preamble.len:
                         tmpQ.extend(bit_window)
                         bit_window.clear()
+                        # self.l.debug(f"state: MSGD -> MSGL")
                         state = dState.MSGL
                         
                     # At the end of the preamble, validate the message integrity
-                    elif message.len == len(preamble):
+                    elif message.len == preamble.len:
                         message.validate(preamble)
-                        if message.valid:                           
+                        if message.valid: 
+                            # we will continue reading
+                            self.l.debug("DECODE: found the preamble, finishing message")                          
                             state = dState.MSGL # finish the message
-                            tmpQ.clear()
-                            bit_window.clear()
-                        else:
+                            tmpQ.clear()        # clear the queue
+                            bit_window.clear()  # prep window (see the next elif block)
+                        else: 
+                            # Message Error state for cleanup
+                            self.l.debug(f"Preamble fail: {preamble} vs. {message} (act)") 
                             state = dState.MSGE # clear the TMP Q and try again
                             while bit_window:
-                                tmpQ.put(bit_window.pop())
+                                tmpQ.append(bit_window.pop()) # move bits to tmpQ for cleanup
 
-                    # All bits afterwards don't need to be saved
+                    # All bits afterwards don't need to be saved now its a real message
+                    # this means we can just say bit_window.clear() and trash it all
                     elif message.len < self.packet_len: 
-                        bit_window.clear() 
+                        bit_window.clear()
+                        # self.l.debug(f"state: MSGD -> MSGL") 
                         state = dState.MSGL
                     
-                    # if the message is finished (will have already been validated)
+                    # if the message is finished (will have already been validated so it should be real)
                     elif message.len == self.packet_len:
-                        # TODO: Send message statistics to optional logger
-                        self._message_queue.put(message)
-                        message = Message()
+                        # TODO: Send message statistics to logger (you can ignore this)
+                        self._message_queue.put(copy(message))
+                        message.clear()
                         sync_window.clear()
                         bit_window.clear()
+                        # Load essentially puts us back a step 0 and so this process can repeat forever.
                         state = dState.LOAD
-
 
                 # MSGE - Message Error. Clear the message, and return to the search state
                 case dState.MSGE:
-                    # put the packets back in their queue.
+                    # put the packets back in their queue (yay for free order with priority).
                     while tmpQ:
                         pQueue.put(tmpQ.pop())
-                    message = Message()
+                    message.clear()
+                    # The eFlag means that this time when it loads, it is a "reload"
+                    # of something we already know is not a message. The eFlag will
+                    # tell it to go into the SHFT state before it goes back to checking
+                    # which saves us from infinite loops.
+                    eFlag = True
                     state = dState.LOAD
 
                 case _:
@@ -800,6 +851,7 @@ class WlskReceiver:
         self.l.info("WLSK-PFSM: ending PFSM process")
         return
 
+# GIRONE
     def _characterizer(self) -> None:
         # wait for pinger to give the okay
         self._global_start.wait()
@@ -810,7 +862,8 @@ class WlskReceiver:
         
         self.l.info("WLSK-CHAR: ending characterizer process")
         return
-    
+
+# REGION
     def _logging_utility(self) -> None:
         self._global_start.wait()
         time.sleep(0.1)
@@ -818,110 +871,81 @@ class WlskReceiver:
        
         global_mil = math.floor(self._global_time.value * 1000)
         
-        def generate_save_data():
-            while not self._global_stop.is_set() or not self._pkt_log.empty() or not self._bkt_log.empty():
-                if self.logPackets:
-                    try:
-                        raw_data = self._pkt_log.get(timeout=0.1)
-                    except q.Empty:
-                        pass
-                    else:
-                        with open(self.path_pkt_csv,'a') as file:
-                            writer = csv.writer(file)
-                            for item in raw_data:
-                                writer.writerow([item]) 
-
-                if self.logBuckets:
-                    try:
-                        mil_info = self._bkt_log.get(timeout=0.1)
-                    except q.Empty:
-                        pass
-                    else:
-                        if self.doLivePlot:
-                            live_bkt_feed.put(mil_info)
-                        if self.logBuckets:
-                            with open(self.path_bukt_csv,'a') as file:
-                                writer = csv.writer(file)
-                                for item in mil_info:
-                                    writer.writerow([item])
-                
-                # TODO: Put in a message logger block
-                # try:
-                #     raw_data = self._pkt_log.get(timeout=0.1)
-                # except q.Empty:
-                #     pass
-                # else:
-                #     with open(self.path_raw_csv,'a') as file:
-                #         writer = csv.writer(file)
-                #         for item in raw_data:
-                #             writer.writerow([item]) 
-            return
-
-        # PACKET LOGGING THREAD: runs whenever something is being logged.
-        data_save_thread = threading.Thread(target=generate_save_data)
-        data_save_thread.daemon = True
-        data_save_thread.start()
-        
-        # TODO: Test the new Live plotter and debug the updater fcns.
-        # LIVE PLOTTER: If enabled, takes the logged info and displays it.
+        # PART 1 : generate live plot objects if desired
         if self.doLivePlot:
-
-            # TODO: Move GraphObj into new file as virtual class, where each graph can instantiate an update fcn
-            from graphers import GraphObj
-
-            NUMBER_OF_GRAPHS = 3
             graph_objs: list[GraphObj] = []
-            animatedFig, generatedAxes = plt.subplots(1,NUMBER_OF_GRAPHS,figsize=(15, 6))
-            
-            # Packet Graph:
-            # graph_objs.append(GraphObj(
-            #     xsz= 500,
-            #     title= "Live Incoming Packet Log",
-            #     xlab= "pkt seq num",
-            #     ylab= "return time",
-            #     axis=animatedAxes[0],
-            #     scroll=50,
-            #     init_h=0.1
-            # ))
-            
-            # Bucket Graph:
-            graph_objs.append(GraphObj(
-                xsz= 1000,
-                title= "Live Bucket Log",
+            # Sync Window Graph:
+            graph_objs.append(UpdatingWindow(
+                xsz= self.SYNC_WIN_SIZE.value,
+                title= "Live Sync Window View",
                 xlab= "milliseconds since start",
                 ylab= "num pkts received",
-                scroll=100,
-                init_h=0.1
+                global_t=global_mil
+            ))
+            # Bit Window Graph:
+            graph_objs.append(UpdatingWindow(
+                xsz= self.BITS_WIN_SIZE.value,
+                title= "Live Bucket Window View",
+                xlab= "milliseconds since start",
+                ylab= "num pkts received",
+                global_t=global_mil
             ))
             
-            # Sync Window Log:
-            graph_objs.append(GraphObj(
-                xsz=self.SYNC_WIN_SIZE,
-                title='Sync window',
-                xlab="index",
-                ylab="correlation",
-                init_h=20
-            ))
+            def duplicate_queues():
+                while not self._global_stop.is_set():
+                    bkt: Bucket = self.qGet(self._bkt_log)
+                    for graph in graph_objs:
+                        graph.input.put(copy(bkt))
             
-            # Bit Window Log:
-            graph_objs.append(GraphObj(
-                xsz=self.BITS_WIN_SIZE,
-                title='bit window',
-                xlab='millisecond',
-                ylab='packets received',
-                init_h=15
-            ))
+            data_save_thread = threading.Thread(target=duplicate_queues)
+            data_save_thread.daemon = True
+            data_save_thread.start()
+            
+            def graph_comm_thread():
+                windex: int
+                comm_t: GraphComm
+                while not self._global_stop.is_set():
+                    comm_t, comm, windex = self.qGet(self._bkt_comm)
+                    if comm_t == GraphComm.NEWMAX:
+                        # self.l.debug(f"Graph {windex} new edge: {comm}")
+                        graph_objs[windex].xmax = comm
+                    if comm_t == GraphComm.VLINES:
+                        # self.l.debug(f"Graph {windex} new vlines: {comm}")
+                        graph_objs[windex].vlines = comm
+                    if comm_t == GraphComm.HLINES:
+                        # self.l.debug(f"Graph {windex} new hlines: {comm}")
+                        graph_objs[windex].hlines = comm
+                    if comm_t == GraphComm.WINNUM:
+                        # self.l.debug(f"Graphcomm points to {comm} from {windex}")
+                        graph_objs[windex].doUpdate = comm
+                return
 
+            # PACKET LOGGING THREAD: runs whenever something is being logged.
+            live_graphing_thread = threading.Thread(target=graph_comm_thread)
+            live_graphing_thread.daemon = True
+            live_graphing_thread.start()
+            
+        # PART 3: If its supposed to be displayed live, do it.
+        if self.doLivePlot:
+            # TODO: Configur-ify this var
+            ANIMATION_RATE = 100
+            
             def animate(frame):
+                objs = []
                 for graph in graph_objs:
-                    graph.update()
-                    pass
-             
-            for i, graph in enumerate(graph_objs):
-                graph.axis = generatedAxes[i]
-                graph.initialize()
+                    objs.append(graph.update())
+                return objs
 
-            anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=250) 
+            num_graphs = len(graph_objs)
+            animatedFig, generatedAxes = plt.subplots(num_graphs,1,figsize=(15, 6))
+            
+            for i, graph in enumerate(graph_objs):
+                graph.figure = animatedFig
+                graph.axis = generatedAxes if num_graphs == 1 else generatedAxes[i]
+                graph.initialize()
+            
+            graph_objs[0].doUpdate = True
+            anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=ANIMATION_RATE) 
 
             plt.show()   
         
@@ -932,12 +956,14 @@ class WlskReceiver:
         
         self.l.info("WLSK-LOGY: ending packet log process")
         return
-    
+
+# ERINGO  
     def _beacon_sniffer(self) -> None:
         self._global_start.wait()
         self.l.warning("WLSK-HEAD: The beacon sniffer process is a deprecated part of WLSK, and will not run.")
         return
 
+# ONERIG
     def _DEBUG_PROCESS(self) -> None:
         self._global_start.wait()
         time.sleep(0.1)
@@ -950,6 +976,7 @@ class WlskReceiver:
         self.l.info("WLSK-DEBG: debug session has ended.")
         return        
 
+# ADMERE
     def word_upscaler(self, word, bitwidth = 102) -> list[int]:
         # TODO: Determine the most accurate way to shape 1 and 0
         #-------------#
@@ -958,11 +985,13 @@ class WlskReceiver:
         #-------------#
 
         # Composite the word into a new, huge upscaled word
+        # \#listcomprehensionftw
         new_word = [item for value in word for item in (upscaled_one if value == 1 else upscaled_zero)]
         return new_word
 
+# REMADE
     def correlate(self, win_data, corr_code, variance, corr_type='full'):
-        # Shaping has been moved to __code_upscaler for testing
+        # Shaping has been moved to __code_upscaler for modularity
         code_upscaled = self.word_upscaler(corr_code)
         
         # TODO: Analyze the correlation function, either by changing shape or style
@@ -971,17 +1000,20 @@ class WlskReceiver:
         conv = np.correlate(var_data,code_upscaled,corr_type)
         #-------------#
 
-        # Return the 0 mean correlate
+        # Return the 0 mean correlation
         return conv-conv.mean()
-    
+
+# EDREAM    
     def sync_single_window(self, toa_dist):
         # NOTE: The toa_dist is now a sync window instead of a whole message
+        # (if you were comparing against the OG decoder)
         toa_dist = toa_dist[0:]
 
         # find the sync word in the raw data 
-        xcorr_sync = self.correlate(win_data=toa_dist, corr_code=self.SYNC_WORD,variance=75)
-
+        xcorr_sync = self.correlate(win_data=toa_dist, corr_code=self.SYNC_WORD,variance=75, corr_type='valid')
+        
         sync_index = np.argmax(xcorr_sync)
+
         # TODO: Decide the best way to look at the sync thresholds.
         # NOTE: This is the old code. Since this only picks the sync index, we don't care that much (?)
         # # Find the first peak of sync word xcorr - this should be the sync word
@@ -999,14 +1031,19 @@ class WlskReceiver:
         # print("Using Sync Word idx: {}".format(sync_start))
         return sync_index
 
-    def bit_decision(self, bit_window, var_size):
+# ARMEDE
+    def bit_decision(self, bit_window, var_size) -> Literal[1,-1]:
         
         # If the barker word and the window are the same size, we can correlate and get a single value back
+        # NOTE: we actually seem to get 5, which with 'valid' mode means that the one is I think 6 buckets bigger?
         xcorr_barker = self.correlate(win_data=bit_window,corr_code=self.BARKER_WORD,variance=var_size,corr_type='valid')
-        corr_value = max(xcorr_barker)
+        corr_max = max(xcorr_barker)
+        corr_min = min(xcorr_barker)
         # Just return which ever one it is closer to (?) No need to do anything fancy anymore
-        return 1 if corr_value > 0 else -1
+        # NOTE: That assumes that we are exactly right on the bucket window though
+        return 1 if corr_max > 0 and abs(corr_max) > abs(corr_min) else 0
 
+# REGOIN
     def qGet(self, Q: q.Queue) -> t.Any:
         '''custom semi-blocking retrieval from any queue object. prevents WLSK receiver froming hanging.'''
         while not self._global_stop.is_set():
@@ -1014,9 +1051,10 @@ class WlskReceiver:
                 return Q.get(timeout=0.1)
             except q.Empty:
                 continue
-        
 
+# ONIGRE        
     def old_bit_decision(self, sync_start, toa_dist, bit_num):
+        # NOTE: THIS IS JUST OLD CODE IT HAS NO USE
         # TODO: Implement this in a single use fcn
         #   - Remove the bits that create all the windows (functionize for PSFM-MSGL?)
         #   - Get rid of the for loop
@@ -1117,10 +1155,6 @@ if __name__ == "__main__":
             signal_handler(signal, frame, processes, pid)
         return handler
     
-    # TODO: Test this new process mover and see if references hold up
-    receiver: WlskReceiver = None
-    signal.signal(signal.SIGINT, create_handler(receiver.processes,parent_pid))
-    
     parser = argp.ArgumentParser(description="interface for using the WLSK receiver.")
     
     parser.add_argument(
@@ -1163,6 +1197,7 @@ if __name__ == "__main__":
     #                   'logToFile','logToConsole','logPackets',
     #                   'logBuckets','logAll','debugEnabled']
    
+    receiver: WlskReceiver = None
     receiver = WlskReceiver(args.config, mode,
                             input_path=args.input_path,
                             output_path=args.output_path,
@@ -1177,8 +1212,13 @@ if __name__ == "__main__":
                             logAll=args.log_all,
                             debugEnabled=args.debug)
     
+    signal.signal(signal.SIGINT, create_handler(receiver.processes,parent_pid))
+    
     receiver.start_receiver()
     
-    msg = receiver.grab_message(20)
+    msg = receiver.block_until_message()
     
+    if msg != None:
+        print(f"Message Received!: {msg}")
+        
     receiver.stop_receiver(clean=True)

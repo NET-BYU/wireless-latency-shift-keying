@@ -5,15 +5,15 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import multiprocessing as mlti
 from collections import deque
+from datetime import datetime
 from enum import Enum, auto
 from scapy.all import *
-from source.rx_v2.utility import *
+from utility import *
 from copy import copy
 import pandas as pd
 import logging as l
 import numpy as np
 import typing as t
-import datetime
 import queue as q
 import json
 import math
@@ -51,6 +51,7 @@ class WlskReceiver:
         DECODER = "wlsk-state-machine"
         NOISER  = "wlsk-characterizer"
         LOGGER  = "wlsk-log-utility"
+        LISTENER= "wlsk-listen-utility"
         BEACON  = "wlsk-beacon-utility"
         DEBUG   = "wlsk-debug-process"
         def __str__(self):
@@ -217,14 +218,16 @@ class WlskReceiver:
             self.processes.append((self.PName.SNIFFER,mlti.Process(target= self._sniff_wlsk_packets)))
             self.processes.append((self.PName.MANAGER,mlti.Process(target= self._packet_bucketer)))
             self.processes.append((self.PName.DECODER,mlti.Process(target= self._decoder_PFSM)))
-            self.processes.append((self.PName.NOISER,mlti.Process(target= self._characterizer)))
+            # self.processes.append((self.PName.NOISER,mlti.Process(target= self._characterizer)))
         elif self.MODE == self.Mode.READFILE:
             # Put the file reader setup function here
             pass
         elif self.MODE == self.Mode.LISTENONLY:
             self.processes.append((self.PName.PINGER,mlti.Process(target= self._send_wlsk_pings)))
             self.processes.append((self.PName.SNIFFER,mlti.Process(target= self._sniff_wlsk_packets)))
-            # put listen only util here???
+            self.processes.append((self.PName.MANAGER,mlti.Process(target= self._packet_bucketer)))
+            self.processes.append((self.PName.LISTENER,mlti.Process(target= self._listener_util)))
+            self.processes.append((self.PName.NOISER,mlti.Process(target= self._characterizer)))
         if self.isLogging:
             self.processes.append((self.PName.LOGGER,mlti.Process(target= self._logging_utility)))
         if self.doBeaconSniffs:
@@ -414,6 +417,7 @@ class WlskReceiver:
         
         # tell the other processes they can go
         self._global_start.set()
+        print("WLSK-PING: global_start set")
         
         while not self._global_stop.is_set():
             # Create the packet: sport is mutable; dport is 80
@@ -422,7 +426,6 @@ class WlskReceiver:
             # send the packet out
             s.send(packet)
             pkt_seq_num += 1
-            
             # This is accurate dependant on your system OS. modern Linux is usually within ~1ms?
             # This may not work on Windows though - I read it was minimum 7-10ms with jitter.
             time.sleep(self.ping_interval)  
@@ -473,9 +476,8 @@ class WlskReceiver:
                             
                         # send it:            pkt #,    outgoing time,          incoming time,         flight time
                         packaged_pkt = Packet(seq=ackR, tout=pkt_list[0][ackR], tin=pkt_list[1][ackR], rtt=pkt_list[2][ackR])
-                        if self.MODE == self.Mode.NORMAL:
-                            self._pkt_queue.put(packaged_pkt)
-                        if self.MODE == self.Mode.LISTENONLY or self.logPackets:
+                        self._pkt_queue.put(packaged_pkt)
+                        if self.logPackets:
                             self._pkt_log.put(packaged_pkt)
                         
                         # remove the packet from the listing to avoid clutter
@@ -520,7 +522,6 @@ class WlskReceiver:
             match (state):
                 case bState.INIT:
                     pkt_info = self.qGet(self._pkt_queue)
-                    
                     bucket = Bucket()
                     bucket.t = math.floor(pkt_info.i * 1000)
                     bucket.c = 0
@@ -538,8 +539,7 @@ class WlskReceiver:
                         state = bState.SEND
                 case bState.SEND:
                     bkt_copy = copy(bucket)
-                    if self.MODE == self.Mode.NORMAL:
-                        self._bkt_queue.put(bkt_copy)
+                    self._bkt_queue.put(bkt_copy)
                     if self.logBuckets or self.doLivePlot:
                         self._bkt_log.put(bkt_copy)
                     bucket.t += 1
@@ -550,6 +550,33 @@ class WlskReceiver:
         self.l.info("WLSK-BUKT: ending bucketer process")
         return
 
+    def _listener_util(self) -> None:
+        self._global_start.wait()
+        
+        curr_sec = 1
+        now = datetime.now()
+        ftime = now.strftime("%m-%d-%H-%M")
+        filename = f"{ftime}_bkts.txt"
+        self.l.info(f"WLSK-SAVE: Beginning save process with file {filename}") 
+        while not self._global_stop.is_set():
+            curr_time = time.time()
+            tbkt: Bucket = self.qGet(self._bkt_queue)
+            with open(filename,"a") as file:
+                writer = csv.writer(file)
+                writer.writerow((tbkt.t,tbkt.c))
+            thetime = curr_time - self._global_time.value
+            
+            if math.floor(thetime) > curr_sec:
+                print(thetime)
+                curr_sec+=1
+            
+            if thetime > self.listen_mode_len:
+                break
+
+        self._global_stop.set()
+        self.l.info("WLSK-SAVE: ending save process")
+        return
+            
 # Hey Chris - start here. Ignore everything above.
 # Here is the workflow to this point:
 # _send_wlsk_pings sends pings which are sniffed by _sniff_wlsk_packets,
@@ -646,7 +673,7 @@ class WlskReceiver:
                     eFlag = False
                     hasGaps = False
                     strongCorr = False
-
+                    beninging = 0
                     # self.l.debug(f"state: INIT -> LOAD")
                     state = dState.LOAD
 
@@ -665,7 +692,7 @@ class WlskReceiver:
                     if len(sync_window) >= self.SYNC_WIN_SIZE.value:
                         # the _bkt_comm is just to communicate with the grapher
                         # you can ignore anything GraphComm related.
-                        self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t,0))
+                        self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,0))
                         # eFlag comes from the decode state - we will come back to it.
                         # It's default value is False.
                         if eFlag:
@@ -689,7 +716,7 @@ class WlskReceiver:
                         # because they have no message (hah losers)
                         sync_window.popleft()
                         sync_window.append(curr_bkt)
-                    self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t,0))
+                    self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,0))
                     # self.l.debug(f"state: SHFT -> NCHK")
                     state = dState.NCHK
                         
@@ -759,7 +786,7 @@ class WlskReceiver:
                         while sync_index > sync_window[-1].t:
                             pQueue.put(sync_window.pop())
                         
-                        self._bkt_comm.put((GraphComm.VLINES,[sync_mil],0))
+                        # self._bkt_comm.put((GraphComm.VLINES,[sync_mil],0))
                         self.l.debug(f"Sync Time: {sync_mil}") # spit sync time
                         # self.l.debug(f"state: CORR -> MSGL")
                         state = dState.MSGL
@@ -800,9 +827,10 @@ class WlskReceiver:
                         
                     # At the end of the preamble, validate the message integrity
                     elif message.len == preamble.len:
-                        message.validate(preamble)
-                        if message.valid: 
+                        if message.check_vs(preamble): 
                             # we will continue reading
+                            beninging = sync_mil - (self.sync_word_len * 102)
+                            self._bkt_comm.put((GraphComm.VLINES,[sync_mil,beninging],0))
                             self.l.debug("DECODE: found the preamble, finishing message")                          
                             state = dState.MSGL # finish the message
                             tmpQ.clear()        # clear the queue
@@ -824,6 +852,7 @@ class WlskReceiver:
                     # if the message is finished (will have already been validated so it should be real)
                     elif message.len == self.packet_len:
                         # TODO: Send message statistics to logger (you can ignore this)
+                        message.stamp()
                         self._message_queue.put(copy(message))
                         message.clear()
                         sync_window.clear()
@@ -876,7 +905,7 @@ class WlskReceiver:
             graph_objs: list[GraphObj] = []
             # Sync Window Graph:
             graph_objs.append(UpdatingWindow(
-                xsz= self.SYNC_WIN_SIZE.value,
+                xsz= self.SYNC_WIN_SIZE.value + self.corr_grace,
                 title= "Live Sync Window View",
                 xlab= "milliseconds since start",
                 ylab= "num pkts received",
@@ -894,6 +923,7 @@ class WlskReceiver:
             def duplicate_queues():
                 while not self._global_stop.is_set():
                     bkt: Bucket = self.qGet(self._bkt_log)
+                    
                     for graph in graph_objs:
                         graph.input.put(copy(bkt))
             
@@ -980,12 +1010,13 @@ class WlskReceiver:
     def word_upscaler(self, word, bitwidth = 102) -> list[int]:
         # TODO: Determine the most accurate way to shape 1 and 0
         #-------------#
-        upscaled_one = [1] * bitwidth
+        upscaled_one = [0] * 50 + [1] * 52
+        # print(upscaled_one)
         upscaled_zero = [-1] * bitwidth
         #-------------#
 
         # Composite the word into a new, huge upscaled word
-        # \#listcomprehensionftw
+        # #listcomprehensionftw
         new_word = [item for value in word for item in (upscaled_one if value == 1 else upscaled_zero)]
         return new_word
 
@@ -993,11 +1024,11 @@ class WlskReceiver:
     def correlate(self, win_data, corr_code, variance, corr_type='full'):
         # Shaping has been moved to __code_upscaler for modularity
         code_upscaled = self.word_upscaler(corr_code)
-        
         # TODO: Analyze the correlation function, either by changing shape or style
         #-------------#
+        # var_data = [item.c for item in win_data]
         var_data = win_data.rolling(window=variance).var().bfill()
-        conv = np.correlate(var_data,code_upscaled,corr_type)
+        conv: np.ndarray = np.correlate(var_data,code_upscaled,corr_type)
         #-------------#
 
         # Return the 0 mean correlation
@@ -1035,7 +1066,7 @@ class WlskReceiver:
     def bit_decision(self, bit_window, var_size) -> Literal[1,-1]:
         
         # If the barker word and the window are the same size, we can correlate and get a single value back
-        # NOTE: we actually seem to get 5, which with 'valid' mode means that the one is I think 6 buckets bigger?
+        # NOTE: we actually seem to get 5, which with 'valid' mode means that the window I think 6 buckets bigger?
         xcorr_barker = self.correlate(win_data=bit_window,corr_code=self.BARKER_WORD,variance=var_size,corr_type='valid')
         corr_max = max(xcorr_barker)
         corr_min = min(xcorr_barker)
@@ -1051,86 +1082,6 @@ class WlskReceiver:
                 return Q.get(timeout=0.1)
             except q.Empty:
                 continue
-
-# ONIGRE        
-    def old_bit_decision(self, sync_start, toa_dist, bit_num):
-        # NOTE: THIS IS JUST OLD CODE IT HAS NO USE
-        # TODO: Implement this in a single use fcn
-        #   - Remove the bits that create all the windows (functionize for PSFM-MSGL?)
-        #   - Get rid of the for loop
-        #   - return it as a single bit in the PFSM
-
-        # TODO: Analysis on the correlation function
-        xcorr_barker = self.correlate(win_data=toa_dist, corr_code=self.BARKER_WORD,variance=75)
-
-        ones, _ = find_peaks(xcorr_barker, height = 500)
-        zeroes, _ = find_peaks(xcorr_barker * -1, height = 500)
-    
-        # Calculate Bit Decision X-values based on the sync word location.
-        timed_xcorr_bit_windows = []
-        ori_bit_windows = []
-        for bit in range(1, self.packet_len+1):
-            xval = sync_start + self.bark_word_len * bit+5*bit
-            if xval < len(xcorr_barker):
-                timed_xcorr_bit_windows.append(xval)
-                ori_bit_windows.append(xval)
-
-        # Finally, make a bit decision at each of the bit window locations. 
-        bit_sequence = []
-        bit_x_vals = []
-        for index in range(len(timed_xcorr_bit_windows)):
-            # Handle case where we get off and are right next to a peak. 
-            grace = 200 if index == 0 else 150
-            point_to_evaluate = timed_xcorr_bit_windows[index]
-            nearby_options = np.arange(point_to_evaluate-grace, point_to_evaluate+grace)
-
-            # find the largest peak not just a peak
-            largest_index_value_pair = [abs(xcorr_barker[point_to_evaluate]),point_to_evaluate, 200]
-            
-            if index == 0:
-                for option in nearby_options:
-                    if (option != point_to_evaluate) and (option in ones ):
-                        if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/1.8)) or (abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]):
-                            largest_index_value_pair[0] = abs(xcorr_barker[option])
-                            largest_index_value_pair[1] = option
-                            largest_index_value_pair[2] = abs(point_to_evaluate -option)
-
-                    elif (option != point_to_evaluate) and (option in zeroes ):
-                        if (abs(point_to_evaluate -option) < largest_index_value_pair[2] and (abs(xcorr_barker[option]) >largest_index_value_pair[0]/2)) or abs(xcorr_barker[option]) > 1.5*largest_index_value_pair[0]:
-                            largest_index_value_pair[0] = abs(xcorr_barker[option])
-                            largest_index_value_pair[1] = option
-                            largest_index_value_pair[2] = abs(point_to_evaluate -option)
-            elif abs(xcorr_barker[point_to_evaluate]) < 200:
-                
-                check_index = np.argmax(np.abs(xcorr_barker[nearby_options]))+nearby_options[0]
-
-                if abs(xcorr_barker[check_index]) > 2 * abs(xcorr_barker[largest_index_value_pair[1]]):
-                    largest_index_value_pair[1] = check_index
-                adjustment = largest_index_value_pair[1]-timed_xcorr_bit_windows[index]
-                timed_xcorr_bit_windows[index] += adjustment
-                print(index, adjustment, timed_xcorr_bit_windows[index])
-                for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
-                    timed_xcorr_bit_windows[adjust_index] += int(adjustment)
-
-            point_to_evaluate = largest_index_value_pair[1] # get the index that we found else it is still x
-
-            # adjust where we are sampling
-            adjustment = point_to_evaluate-timed_xcorr_bit_windows[index]
-            if index==0:
-                timed_xcorr_bit_windows[index] += adjustment
-                for i,adjust_index in enumerate(range(index+1,len(timed_xcorr_bit_windows))):
-                    timed_xcorr_bit_windows[adjust_index] += int(adjustment/((i+2)**2))
-
-
-            if xcorr_barker[point_to_evaluate] > 0:
-                bit_sequence.append(1)
-            else:
-                bit_sequence.append(0)
-
-            bit_x_vals.append(point_to_evaluate)
-        
-        print("Eval X coordinates: {}\n".format(bit_x_vals))
-        return bit_sequence
 
 if __name__ == "__main__":
     
@@ -1217,8 +1168,10 @@ if __name__ == "__main__":
     receiver.start_receiver()
     
     msg = receiver.block_until_message()
-    
+    compare = Message(msg=[1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0],valid=True)
     if msg != None:
+        print(f"Original Message : {compare}")
         print(f"Message Received!: {msg}")
         
     receiver.stop_receiver(clean=True)

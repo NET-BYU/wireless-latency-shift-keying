@@ -62,24 +62,31 @@ class Message:
         self.timestamp = tstamp
         self.message = msg
         self.len = len(msg)
-        self.valid = valid
+        self.__valid = valid
     def add_bit(self,bit: int):
         self.message.append(bit)
         self.len += 1
-    def validate(self,preamble: 'Message'):
-        self.valid = (str(preamble) == str(self))
-        return self.valid
+    def check_vs(self,preamble: 'Message'):
+        return (str(preamble) == str(self))
     def clear(self):
         self.timestamp = None
         self.message = []
         self.len = 0
-        self.valid = False
+        self.__valid = False
+    def stamp(self):
+        self.__valid = True
     def __bool__(self):
-        return self.valid
+        return self.__valid
     def __len__(self):
         return self.len
-    def __eq__(self, value: 'Message') -> bool:
-        return (self.timestamp == value.timestamp) and (self.timestamp != None)
+    def __eq__(self, value) -> bool:
+        if value == None:
+            return not self.__valid
+        elif type(value) == Message:
+            return self.timestamp == value.timestamp
+        elif type(value) == str:
+            return str(self) == value
+        else: return False
     def __str__(self) -> str:
         return ''.join(map(str,self.message)) if self.len > 0 else '<empty>'
 

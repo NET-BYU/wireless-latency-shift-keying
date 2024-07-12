@@ -1,0 +1,23 @@
+version: 4.0
+
+rx_params:
+  rx_interface: eno1
+  rx_ping_interval: 0.001 # TODO: eventually be dynamic?
+  ping_target_ip: 192.168.0.246
+  ping_src_addr: DE:AD:BE:EF:DE:AD
+  ping_source_port: 25565 # interchangeable
+  ping_dest_port: 80 # Should remain the same
+
+decoder_params:
+  preamble: [1,1,1,1,1,1,1,1]
+  packet_length: 32
+
+utilities:
+  mode: normal
+  timeout: 100
+  input_path: <put path here>
+  output_path: <put path here>
+  do_logging: False
+  console_output: True
+  show_live_stats: False
+  debug_outputs: False

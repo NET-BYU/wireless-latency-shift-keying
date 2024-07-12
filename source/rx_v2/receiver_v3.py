@@ -1,7 +1,8 @@
+from scipy.signal import find_peaks, correlate
 from scapy.all import Ether, IP, TCP, Dot11
 from decoder_utils import WlskDecoderUtils
-from scipy.signal import find_peaks, correlate
 import matplotlib.animation as animation
+from scipy.stats import rankdata
 import matplotlib.pyplot as plt
 import multiprocessing as mlti
 from collections import deque
@@ -674,6 +675,7 @@ class WlskReceiver:
                     hasGaps = False
                     strongCorr = False
                     beninging = 0
+                    sync_mil = 0
                     # self.l.debug(f"state: INIT -> LOAD")
                     state = dState.LOAD
 
@@ -693,6 +695,7 @@ class WlskReceiver:
                         # the _bkt_comm is just to communicate with the grapher
                         # you can ignore anything GraphComm related.
                         self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,0))
+                        self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,2))
                         # eFlag comes from the decode state - we will come back to it.
                         # It's default value is False.
                         if eFlag:
@@ -707,7 +710,7 @@ class WlskReceiver:
                     # TODO: Configur-ify this var. We can choose how many buckets to shift by.
                     # One seems too small since the beacons are 102 of them wide...
                     # I have tried 10, 50, and 102, with little variance (except maybe processing speed? TBD)
-                    SHIFT_SIZE = 102
+                    SHIFT_SIZE = 1
                     
                     for _ in range(SHIFT_SIZE):
                         # get a new bucket
@@ -717,6 +720,7 @@ class WlskReceiver:
                         sync_window.popleft()
                         sync_window.append(curr_bkt)
                     self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,0))
+                    self._bkt_comm.put((GraphComm.NEWMAX,curr_bkt.t + self.corr_grace,2))
                     # self.l.debug(f"state: SHFT -> NCHK")
                     state = dState.NCHK
                         
@@ -756,45 +760,24 @@ class WlskReceiver:
                 
                 # CORR - correlate. Performs a correlation on the sync window.
                 case dState.CORR:
-                    # Between these lines is essentially the "drag and drop" section where 
-                    # the state machine just needs something that correlates and spits a 
-                    # location for us to start searching for preambles.
-                    # We also had talked about a layer of preprocessing with the
-                    # std deviations. I haven't implemented that yet.
-                    #-------------#
-                    sync_index = self.sync_single_window(pd.Series(sync_window)) # This should be a function you read
-                    
-                    # this is the millisecond that we are going to choose to decide what the buckets should be at
-                    # the reason it looks so complex is that I convert from raw UNIX time to milliseconds since
-                    # start of the program.
-                    sync_mil = sync_window[self.sync_word_len * 102 + sync_index - 1].t - math.floor(self._global_time.value * 1000) 
-                    # TODO: What defines strong correlation?
-                    #-------------#
-                    
-                    # I was logging the millis for something; ignore
-                    # with open("./DEBUG.txt","a") as file:
-                    #     file.write(f"{sync_mil}\n")
 
-                    # This should choose to shift if the point it wants to say 
-                    # was a sync word was already determined a failure
-                    if sync_index not in seen_idxs:
-                        seen_idxs.append(sync_index)
-                        # after receiving index, we assume that the bit window should start on
-                        # the sync edge (which seemed to be what we saw in graph tests).
-                        # Therefore, we push the buckets after the sync word back into 
-                        # the main pQueue for use in the bucket windows.
-                        while sync_index > sync_window[-1].t:
-                            pQueue.put(sync_window.pop())
-                        
-                        # self._bkt_comm.put((GraphComm.VLINES,[sync_mil],0))
-                        self.l.debug(f"Sync Time: {sync_mil}") # spit sync time
-                        # self.l.debug(f"state: CORR -> MSGL")
-                        state = dState.MSGL
-                    else:
-                        # self.l.debug(f"state: CORR -> SHFT")
-                        self.l.debug("--Reused idx - shifting--")
-                        state = dState.SHFT
-                
+                    sync_index = self.sync_single_window(pd.Series(sync_window)) # This should be a function you read
+                    self._bkt_comm.put((GraphComm.POINTS,(sync_mil,sync_index),2))
+                    sync_mil += 1
+                    # print(sync_index)
+                    # sync_mil = sync_window[self.sync_word_len * 102 + sync_index - 1].t - math.floor(self._global_time.value * 1000) 
+                    # print(sync_mil)
+                    # if sync_index not in seen_idxs:
+                    #     seen_idxs.append(sync_index)
+                    #     while sync_index > sync_window[-1].t:
+                    #         pQueue.put(sync_window.pop())
+                    #     self.l.debug(f"Sync Time: {sync_mil}")
+                    #     state = dState.MSGL
+                    # else:
+                    #     self.l.debug("--Reused idx - shifting--")
+                    #     state = dState.SHFT
+                    state = dState.SHFT
+                    
                 # MSGL - Message Load. Takes in a set of buckets equal to the size of a bit decision window.
                 case dState.MSGL:
                     # This is an identical state to LOAD except with a different window and size
@@ -919,13 +902,22 @@ class WlskReceiver:
                 ylab= "num pkts received",
                 global_t=global_mil
             ))
+            # Correlation Graph
+            graph_objs.append(UpdatingWindow(
+                xsz= 1000,
+                title= "Live Correlation View",
+                xlab= "milliseconds since start",
+                ylab= "correlation value",
+                global_t=global_mil
+            ))
             
             def duplicate_queues():
                 while not self._global_stop.is_set():
                     bkt: Bucket = self.qGet(self._bkt_log)
                     
                     for graph in graph_objs:
-                        graph.input.put(copy(bkt))
+                        if type(graph) == UpdatingWindow:
+                            graph.input.put(copy(bkt))
             
             data_save_thread = threading.Thread(target=duplicate_queues)
             data_save_thread.daemon = True
@@ -948,6 +940,8 @@ class WlskReceiver:
                     if comm_t == GraphComm.WINNUM:
                         # self.l.debug(f"Graphcomm points to {comm} from {windex}")
                         graph_objs[windex].doUpdate = comm
+                    if comm_t == GraphComm.POINTS:
+                        graph_objs[windex].input.put(Bucket(mil=comm[0],pkts=comm[1]))
                 return
 
             # PACKET LOGGING THREAD: runs whenever something is being logged.
@@ -974,7 +968,7 @@ class WlskReceiver:
                 graph.axis = generatedAxes if num_graphs == 1 else generatedAxes[i]
                 graph.initialize()
             
-            graph_objs[0].doUpdate = True
+            graph_objs[2].doUpdate = True
             anime = animation.FuncAnimation(animatedFig, animate, blit=True, interval=ANIMATION_RATE) 
 
             plt.show()   
@@ -1028,7 +1022,8 @@ class WlskReceiver:
         #-------------#
         # var_data = [item.c for item in win_data]
         var_data = win_data.rolling(window=variance).var().bfill()
-        conv: np.ndarray = np.correlate(var_data,code_upscaled,corr_type)
+        rank_data = pd.Series(rankdata(var_data))
+        conv: np.ndarray = np.correlate(rank_data,code_upscaled,corr_type)
         #-------------#
 
         # Return the 0 mean correlation
@@ -1043,7 +1038,8 @@ class WlskReceiver:
         # find the sync word in the raw data 
         xcorr_sync = self.correlate(win_data=toa_dist, corr_code=self.SYNC_WORD,variance=75, corr_type='valid')
         
-        sync_index = np.argmax(xcorr_sync)
+        # sync_index = np.argmax(xcorr_sync)
+        sync_index = xcorr_sync[0]
 
         # TODO: Decide the best way to look at the sync thresholds.
         # NOTE: This is the old code. Since this only picks the sync index, we don't care that much (?)

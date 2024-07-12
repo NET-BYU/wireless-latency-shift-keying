@@ -95,6 +95,7 @@ class GraphComm(Enum):
     VLINES = auto()
     HLINES = auto()
     WINNUM = auto()
+    POINTS = auto()
     # UPDATE = auto()
     
 class GraphObj(ABC):
@@ -191,10 +192,11 @@ class UpdatingWindow(GraphObj):
     
 class CorrelationWindow(GraphObj):
     def __init__(self, xsz=0, title="", xlab="", ylab="", global_t=0) -> None:
-        self.input:     q.Queue     = q.Queue()
+        self.points:    q.Queue     = q.Queue()
         self.global_t:  int         = global_t
         self.title:     str         = title
         self.xlab:      str         = xlab
+        self.pointnum:  int         = 0
         self.XSZ:       int         = xsz
         self.ylab:      str         = ylab
         self.xmax:      int         = 0
@@ -220,31 +222,29 @@ class CorrelationWindow(GraphObj):
 
     def update(self):
         # print(self.input.qsize())
-        if self.xmax != self.xmax_p or self.hlines or self.vlines:
-            self.xmax_p = self.xmax
-            bucket: Bucket = self.input.get()
-            conv_time = bucket.t - self.global_t
-            while bucket.t <= self.xmax:
-                self.xax.append(conv_time)
-                self.yax.append(bucket.c)
-                bucket: Bucket = self.input.get()
-                conv_time = bucket.t - self.global_t
-            if len(self.xax) > 0:
-                while len(self.xax) > self.XSZ:
-                    self.xax.popleft()
-                    self.yax.popleft()
-                self.graph.set_offsets(np.c_[self.xax,self.yax])
-                if len(self.hlines) > 0 :
-                    self.axis.hlines(self.hlines,*self.axis.get_ylim(),linestyles=['--'],)
-                    self.hlines.clear()
-                if len(self.vlines) > 0 :
-                    self.axis.vlines(self.vlines,*self.axis.get_ylim(),linestyles=['--'])
-                    self.vlines.clear()
-                self.axis.set_xlim(self.xax[0],max(1,conv_time))
-                self.axis.set_ylim(0,max(15,max(self.yax)))
-                self.axis.set_xticks(np.arange(min(self.xax), max(self.xax), 100))
-                self.axis.set_yticks(np.arange(min(self.yax), max(self.yax)+3, 1))
-                self.figure.canvas.draw()
+        if self.points.qsize() == 0 or self.hlines or self.vlines:
+            print(self.points.qsize())
+            while self.points.qsize() > 0:
+                point = self.points.get()
+                self.xax.append(point)
+                self.yax.append(self.pointnum)
+                self.pointnum += 1
+                if len(self.xax) > 0:
+                    while len(self.xax) > self.XSZ:
+                        self.xax.popleft()
+                        self.yax.popleft()
+                    self.graph.set_offsets(np.c_[self.xax,self.yax])
+                    if len(self.hlines) > 0 :
+                        self.axis.hlines(self.hlines,*self.axis.get_ylim(),linestyles=['--'],)
+                        self.hlines.clear()
+                    if len(self.vlines) > 0 :
+                        self.axis.vlines(self.vlines,*self.axis.get_ylim(),linestyles=['--'])
+                        self.vlines.clear()
+                    self.axis.set_xlim(self.xax[0],max(1,self.pointnum))
+                    self.axis.set_ylim(min(0,min(self.yax)),max(15,max(self.yax)))
+                    self.axis.set_xticks(np.arange(min(self.xax), max(self.xax), 100))
+                    self.axis.set_yticks(np.arange(min(self.yax), max(self.yax)+3, 1))
+                    self.figure.canvas.draw()
             # self.doUpdate = False
         return self.graph
     

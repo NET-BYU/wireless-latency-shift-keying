@@ -9,15 +9,16 @@ rx_params:
   ping_dest_port: 80 # Should remain the same
 
 decoder_params:
-  preamble: [1,1,1,1,1,1,1,1]
+  preamble: [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,]
   packet_length: 32
+  system:
+    back_offset: 101
+    front_offset: 1
+    zero_percentage: 70
 
 utilities:
   mode: normal
   timeout: 100
-  input_path: <put path here>
-  output_path: <put path here>
-  do_logging: False
-  console_output: True
-  show_live_stats: False
-  debug_outputs: False
+  logging:
+    console_output: True
+    debug_outputs: True

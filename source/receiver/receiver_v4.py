@@ -1,6 +1,5 @@
 from __future__ import annotations
 from scapy.all import Ether, IP, TCP, Dot11
-from scipy.signal import find_peaks, correlate
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import multiprocessing as mlti
@@ -373,7 +372,7 @@ class WLSK:
         # OPTION 1: GET PACKETS VIA ACTUAL TRAFFIC
         def sendPingPackets(self) -> None:
             self.l.info(
-                "WLSK-PING: Beginning pinger; intvl: {}; ip: {}".format(self.ping_interval, self.target_ip))
+                "WLSK-PING: Beginning pinger @ {} p/s to {} over {}".format((1/self.ping_interval), self.target_ip, self.rx_interface))
 
             # pinger sets the global time to be closest to the first ping
             self.global_time.value = time.time()
@@ -436,7 +435,8 @@ class WLSK:
                         if dport == self.dport and sport == self.sport:
                             # save the outgoing time
                             pkt_list[0][seq] = packet.time
-
+                            if seq == 1:
+                                self.l.debug("WLSK-SNIF: outgoing packet shape: {}".format(packet))
                         # if the packet is incoming
                         elif dport == self.sport and sport == self.dport:
                             # save the return time
@@ -452,7 +452,7 @@ class WLSK:
                             # send it:            pkt #,    outgoing time,          incoming time,         flight time
                             packaged_pkt = WLSK.Packet(
                                 seq=ackR, tout=pkt_list[0][ackR], tin=pkt_list[1][ackR], rtt=pkt_list[2][ackR])
-                            # self.l.debug("WLSK-SNIF: sending packet: {}".format(packaged_pkt))
+                            self.l.debug("WLSK-SNIF: sending packet: {}".format(packaged_pkt))
                             self.pkt_queue.put(packaged_pkt)
 
                             # remove the packet from the listing to avoid clutter

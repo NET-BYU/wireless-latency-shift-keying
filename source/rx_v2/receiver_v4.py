@@ -575,7 +575,7 @@ class WLSK:
             # timer_thread = WLSK.Timer(duration, timer_event)
             # timer_thread.start()
             
-            noise_floor = 10
+            noise_floor = 15
             # while not timer_event.is_set():
             #     # TODO: add the noise floor calculation
             #     pass
@@ -766,9 +766,13 @@ if __name__ == "__main__":
     #   1, 0, 1, 0, 1, 0, 1, 0, 1, 1
     # 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
     # 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1
-    # 
-    compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
-                                ], forceValid=True)
+    #                                                                                         ##
+    compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0, 
+                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
+                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
+                        ], forceValid=True)
 
     print(f"Original Message : {compare}")
     print(f"Message Received!: {msg}")

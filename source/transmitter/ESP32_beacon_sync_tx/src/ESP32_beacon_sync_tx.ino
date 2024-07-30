@@ -49,10 +49,12 @@ uint8_t txData_7[32] = {1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1,
                         0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0};
 uint8_t txData_8[32] = {1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0,
                         0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1};
-uint8_t txData_9[32] = {1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+uint8_t txData_9[64] = {1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
+                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0};
 
-uint8_t transmitData[32] = {0};
+uint8_t transmitData[64] = {0};
 
 void selectTxData(uint8_t idx)
 {
@@ -93,8 +95,8 @@ void selectTxData(uint8_t idx)
 }
 
 uint8_t transmitDataLen = sizeof(transmitData) / sizeof(transmitData[0]);
-uint8_t barkerOne[11] = {1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0};
-uint8_t barkerZero[11] = {0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1};
+uint8_t barkerOne[1] = {1};
+uint8_t barkerZero[1] = {0};
 uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
                         0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
 

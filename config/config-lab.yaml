@@ -10,11 +10,11 @@ rx_params:
 
 decoder_params:
   preamble: [1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,]
-  packet_length: 32
+  packet_length: 64
   system:
     back_offset: 101
     front_offset: 1
-    zero_percentage: 70
+    zero_percentage: 85
 
 utilities:
   mode: normal

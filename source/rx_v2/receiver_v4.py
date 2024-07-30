@@ -78,11 +78,11 @@ class WLSK:
         def add_bit(self, bit: int):
             self.message.append(bit)
             self.len += 1
+        def list(self):
+            return self.message
         def check_vs(self, preamble):
-            if type(preamble) == list:
-                return (preamble == self.message[:len(preamble)])
-            elif type(preamble) == Message:
-                return (str(preamble) == str(self))
+            diff = sum(r != w for r, w in zip(self.message, preamble))
+            return diff < 5
         def clear(self):
             self.timestamp = None
             self.message = []
@@ -357,8 +357,8 @@ class WLSK:
         def waitUntilMessage(self) -> list:
             '''blocks the running thread until a message is received in the queue.
             Use hasMessage() and grab_message() instead to prevent blocking or actively timeout.'''
-            self.fetch(self.msg_queue)
-            return
+            msg = self.fetch(self.msg_queue)
+            return msg
 
         #TODO: implement this function
         def grabMessage(self, timeout: float = 0.5) -> list:
@@ -676,6 +676,8 @@ class WLSK:
                         # TODO: add the bit decision logic and how to space the sync window
                         def zero_percentage(time_center):
                             packets= [pkt.c for pkt in FSM.window]
+                            time_center = time_center - FSM.window[0].t
+                            # print(packets)
                             num_zeros = sum(
                                 1
                                 for pkt in packets[time_center - self.b_offset : time_center + self.f_offset]
@@ -686,7 +688,8 @@ class WLSK:
                             return result
                         
                         for i in range(self.preamble_len):
-                            time_center = FSM.sync_idx + (103 * i)
+                            time_center = FSM.sync_idx + math.ceil(102.4 * i)
+                            # print(time_center)
                             if zero_percentage(time_center):
                                 FSM.message.add_bit(1)
                             else:
@@ -694,18 +697,24 @@ class WLSK:
                         FSM.sync_passed = FSM.message.check_vs(self.preamble)
                         self.l.debug(f"WLSK-MSGF: {FSM.message}")
                         # State transition
+                        FSM.message.clear()
                         if FSM.sync_passed:
                             FSM.chg_win_size = State.MSG_SIZE
-                            FSM.state = ds.DECODE
+                            FSM.state = ds.RESIZE
                         else:
-                            FSM.message.clear()
                             FSM.window.seen_idxs.add(FSM.sync_idx)
                             FSM.state = ds.FIND
                     
                     # DECODE - Decodes the message and sends it to the message queue.
                     case ds.DECODE:
-                        # TODO: add the message decoding logic
-                        pass
+                        for i in range(self.preamble_len + self.packet_len):
+                            time_center = FSM.sync_idx + math.ceil(102.4 * i)
+                            if zero_percentage(time_center):
+                                FSM.message.add_bit(1)
+                            else:
+                                FSM.message.add_bit(0)
+                        self.msg_queue.put(copy(FSM.message))
+                        FSM.state = ds.CLEAN
                     
                     # CLEAN - empties the window and waits for the next message.
                     case ds.CLEAN:
@@ -722,7 +731,7 @@ class WLSK:
                             f"WLSK-PFSM: Reached illegal state!! state: {FSM.state}")
                 # slow down the loop for debugging
                 self.l.debug(FSM)
-                time.sleep(.5)
+                # time.sleep(.1)
             self.l.info("WLSK-PFSM: ending PFSM process")
             return
 
@@ -754,12 +763,14 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, receiver))
     
     msg = receiver.waitUntilMessage()
+    #   1, 0, 1, 0, 1, 0, 1, 0, 1, 1
+    # 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
+    # 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1
+    # 
+    compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
+                                ], forceValid=True)
 
-    compare = WLSK.Message(msg=[1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
-                           1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0], forceValid=True)
-
-    if msg != None:
-        print(f"Original Message : {compare}")
-        print(f"Message Received!: {msg}")
+    print(f"Original Message : {compare}")
+    print(f"Message Received!: {msg}")
 
     receiver.stopReceiver()

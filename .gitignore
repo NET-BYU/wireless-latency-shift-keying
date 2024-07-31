@@ -9,12 +9,10 @@ wlsk-rx/test/
 venv/
 *.DS_Store
 
-# you shouldn't keep pycaches ;)
+# files I created as tests during experiments, etc.
 source/receiver/__pycache__/
 source/rx_v2/__pycache__/
 source/__pycache__/
-
-# files I created as tests during experiments, etc.
 t-misc/
 tdumps/
 test/
@@ -22,9 +20,3 @@ sus.txt
 zeroes.txt
 wlsk_rec.log
 source/rx_v2/rx_test_plots/
-
-# ignore the savefiles, but keep the example plot.
-savefiles/plots/*
-!savefiles/plots/example.png
-savefiles/windows/*
-!savefiles/windows/example.csv

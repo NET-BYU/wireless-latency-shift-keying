@@ -312,6 +312,7 @@ class WLSK:
                     self.preamble           = decoder_params["preamble"]
                     self.preamble_len       = len(self.preamble) 
                     self.packet_len         = decoder_params["packet_length"]
+                    self.sync_threshold     = decoder_params["system"]["sync_threshold"]
                     
                     # UTILITIES
                     self.timeout            = utilities["timeout"]
@@ -575,7 +576,7 @@ class WLSK:
             # timer_thread = WLSK.Timer(duration, timer_event)
             # timer_thread.start()
             
-            noise_floor = 15
+            noise_floor = self.sync_threshold
             # while not timer_event.is_set():
             #     # TODO: add the noise floor calculation
             #     pass
@@ -767,7 +768,8 @@ if __name__ == "__main__":
     # 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
     # 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1
     #                                                                                         ##
-    compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0, 
+    # compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0, 
+    compare = WLSK.Message(msg=[
                         1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
                         1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
@@ -775,6 +777,6 @@ if __name__ == "__main__":
                         ], forceValid=True)
 
     print(f"Original Message : {compare}")
-    print(f"Message Received!: {msg}")
+    print(f"Message Received!: {''.join(str(x) for x in msg.message[31:])}")
 
     receiver.stopReceiver()

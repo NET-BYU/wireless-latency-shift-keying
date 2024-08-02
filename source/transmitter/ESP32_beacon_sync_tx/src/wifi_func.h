@@ -211,7 +211,7 @@ void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
     // if (!(strcmp(ssid, "WLSK-NET-2G")))
     if (!(strcmp(ssid, NET_SSID))) {
       BEACON_DETECTED = 1;  // Beacon frame found, inform main loop
-      Serial.println("Beacon Detected");
+      // Serial.println("Beacon Detected");
       int16_t temp = (int16_t)((wifi_pkt_rx_ctrl_t)ppkt->rx_ctrl).rssi;
       // Serial.println(temp);
       RSSI_VALUE = temp;

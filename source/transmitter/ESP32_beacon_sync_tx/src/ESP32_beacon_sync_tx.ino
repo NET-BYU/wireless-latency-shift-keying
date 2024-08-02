@@ -157,7 +157,7 @@ void shiftNetworkLatency()
 
 void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
 {
-  printState(stateHandle);  // Debug: print out current state
+  // printState(stateHandle);  // Debug: print out current state
   switch (stateHandle->state)
   {
   case GUARD:
@@ -175,11 +175,13 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
       // Send a null frame
       shiftNetworkLatency();
       // ledOn();
+      Serial.printf("1");
     }
     else
     {
       // Do nothing this state machine iteration
       // ledOff();
+      Serial.printf("0");
     }
     stateHandle->barkerIdx++;
     // Check here if we need state change
@@ -206,11 +208,13 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
         // Send a null frame
         shiftNetworkLatency();
         // ledOn();
+        Serial.printf("1");
       }
       else
       {
         // Do nothing this state machine iteration
         // ledOff();
+        Serial.printf("0");
       }
       stateHandle->barkerIdx++;
       // Check here if we need state change
@@ -237,7 +241,7 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
           stateHandle->barkerIdx = 0;
           stateHandle->state = GUARD;
           Serial.flush();
-          Serial.print("Done, waiting for input...\r\n");
+          Serial.print("\nDone, waiting for input...\r\n");
           firstTime = true;
           wifi_sniffer_stop();
           wifi_sniffer_init();
@@ -254,11 +258,13 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
         // Send a null frame
         shiftNetworkLatency();
         // ledOn();
+        Serial.printf("1");
       }
       else
       {
         // Do nothing this state machine iteration
         // ledOff();
+        Serial.printf("0");
       }
       stateHandle->barkerIdx++;
       // Check here if we need state change
@@ -285,7 +291,7 @@ void wlskStateMachineIteration(wlskStateHandle_t *stateHandle)
           stateHandle->barkerIdx = 0;
           stateHandle->state = GUARD;
           Serial.flush();
-          Serial.print("Done, waiting for input...\r\n");
+          Serial.print("\nDone, waiting for input...\r\n");
           firstTime = true;
           wifi_sniffer_stop();
           wifi_sniffer_init();
@@ -411,7 +417,7 @@ void loop()
 
   if (BEACON_DETECTED || timeout)
   {
-    Serial.printf("Beacon Detected\r\n");
+    // Serial.printf("Beacon Detected\r\n");
     // ledToggle();
     if (BEACON_DETECTED)
     {
@@ -433,7 +439,7 @@ void loop()
     if (rssi_count++ >= 5)
     {
       rssi_count = 0;
-      Serial.printf("RSSI: %d\n", RSSI_VALUE);
+      // Serial.printf("RSSI: %d\n", RSSI_VALUE);
     }
   }
 }

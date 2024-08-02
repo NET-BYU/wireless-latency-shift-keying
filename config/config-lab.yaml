@@ -1,7 +1,7 @@
 version: 4.0
 
 rx_params:
-  rx_interface: eno1
+  rx_interface: enp0s31f6
   rx_ping_interval: 0.001 # TODO: eventually be dynamic?
   ping_target_ip: 192.168.0.246
   ping_src_addr: DE:AD:BE:EF:DE:AD
@@ -14,7 +14,8 @@ decoder_params:
   system:
     back_offset: 101
     front_offset: 1
-    zero_percentage: 85
+    zero_percentage: 70
+    sync_threshold: 7
 
 utilities:
   mode: normal

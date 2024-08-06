@@ -82,7 +82,7 @@ class WLSK:
             return self.message
         def check_vs(self, preamble):
             diff = sum(r != w for r, w in zip(self.message, preamble))
-            return diff < 5
+            return diff < 2
         def clear(self):
             self.timestamp = None
             self.message = []
@@ -130,7 +130,7 @@ class WLSK:
             '''The timer will sleep for the duration and then set the event flag to true.'''
             time.sleep(self.duration)
             self.eventFlag.set()
-    
+
     class Window:
         '''A window is a collection of buckets that are used to determine the latency of a period of time.'''
         def __init__(self, maxSize):
@@ -139,8 +139,8 @@ class WLSK:
             self.window: deque[WLSK.Bucket] = deque()
             self.queue = None
             self.start = 0
-            self.seen_idxs = set()  
-            
+            self.seen_idxs = set()
+
         def append(self, item):
             '''appends a bucket to the window'''
             if len(self.window) < self.max:
@@ -149,11 +149,11 @@ class WLSK:
             else:
                 self.window.popleft()
                 self.window.append(item)
-            self.start = self.window[0].t  
+            self.start = self.window[0].t
         def appendFrom(self, queue):
             '''appends a bucket from the queue to the window'''
             result = queue.get()
-            self.append(result) 
+            self.append(result)
         def setQueue(self, queue):
             '''sets the queue to pull from'''
             self.queue = queue
@@ -162,7 +162,7 @@ class WLSK:
             self.window.clear()
             self.size = 0
             self.start = 0
-            self.seen_idxs.clear() 
+            self.seen_idxs.clear()
         def resize(self, size=None, time=None, offset=0):
             '''resizes the window to a new size or start time'''
             # set the new size and start time
@@ -176,13 +176,13 @@ class WLSK:
             # adjust the start time
             if time != None:
                 while self.window[0].t < time - offset:
-                    self.appendFrom(self.queue) 
+                    self.appendFrom(self.queue)
         def printAll(self, times=False):
             '''prints all the items in the window'''
             if times:
-                return ','.join(map(str, [item.t for item in self.window])) if self.size > 0 else '<empty>' 
+                return ','.join(map(str, [item.t for item in self.window])) if self.size > 0 else '<empty>'
             else:
-                return ','.join(map(str, [item.c for item in self.window])) if self.size > 0 else '<empty>'                
+                return ','.join(map(str, [item.c for item in self.window])) if self.size > 0 else '<empty>'
         def __iter__(self):
             for item in self.window:
                 yield item
@@ -192,13 +192,13 @@ class WLSK:
             return len(self.window)
         def __str__(self):
             return f"Window: {self.size} / {self.max} ({self.start})"
-        
+
     class Receiver:
         '''
         Wireless Latency Shift Keying is a method of encoding data into network latency,
         allowing a device not in a network to communicate into the network without
         proper authentication beforehand. see the Github for more information:
-        https://github.com/NET-BYU/wireless-latency-shift-keying/tree/main 
+        https://github.com/NET-BYU/wireless-latency-shift-keying/tree/main
         '''
         VERSION = 4.0
 
@@ -233,12 +233,12 @@ class WLSK:
 
             # attempt to load the initalizer. THIS DOES NOT VALIDATE ALL THE CONFIG ENTRIES (Should it?)
             self.initializeReceiver(self.config_path)
-            
+
             # MULTIPROCESSING OBJECTS
             # All multiprocessing objects are set as a tuple, with a name (0) and a process (1).
             # they are held in a list that manages them when turning the receiver on or off.
             self.processes: list[tuple[WLSK.Process,mlti.Process]] = []
-            
+
             # generate the processes for the receiver
             self.processes.append(
                 (WLSK.Process.TPINGER, mlti.Process(target=self.sendPingPackets)))
@@ -274,7 +274,7 @@ class WLSK:
             #     file_handler.setLevel(logLevel)
             #     file_handler.setFormatter(formatter)
             #     self.l.addHandler(file_handler)
-            
+
             if self.isInitalized:
                 self.l.info("WLSK-HEAD: Receiver created successfully.")
             else:
@@ -304,16 +304,16 @@ class WLSK:
                     self.src_addr           = rx_params["ping_src_addr"]
                     self.sport              = rx_params["ping_source_port"]
                     self.dport              = rx_params["ping_dest_port"]
-                    
+
                     # DECODER_PARAMS
                     self.b_offset           = decoder_params["system"]["back_offset"]
                     self.f_offset           = decoder_params["system"]["front_offset"]
                     self.zero_percentage    = decoder_params["system"]["zero_percentage"]
                     self.preamble           = decoder_params["preamble"]
-                    self.preamble_len       = len(self.preamble) 
+                    self.preamble_len       = len(self.preamble)
                     self.packet_len         = decoder_params["packet_length"]
                     self.sync_threshold     = decoder_params["system"]["sync_threshold"]
-                    
+
                     # UTILITIES
                     self.timeout            = utilities["timeout"]
                     self.doConsoleOutput    = logging["console_output"]
@@ -515,7 +515,7 @@ class WLSK:
                         pkt_time = math.floor(pkt_info.i * 1000)
                         state = bState.SLOT
                     case bState.SLOT:
-                        # self.l.debug("WLSK-BUKT: slot") 
+                        # self.l.debug("WLSK-BUKT: slot")
                         if pkt_time <= bucket.t:
                             bucket.c += 1
                             state = bState.LOAD
@@ -571,16 +571,16 @@ class WLSK:
                 self.global_stop.set()
 
         # DECODE THE PACKETS
-        def determineNoiseFloor(self, duration) -> int:  
+        def determineNoiseFloor(self, duration) -> int:
             # timer_event = threading.Event()
             # timer_thread = WLSK.Timer(duration, timer_event)
             # timer_thread.start()
-            
+
             noise_floor = self.sync_threshold
             # while not timer_event.is_set():
             #     # TODO: add the noise floor calculation
             #     pass
-            
+
             return noise_floor
 
         def latencyDecoder(self) -> None:
@@ -598,7 +598,7 @@ class WLSK:
                 DECODE = auto()
                 CLEAN = auto()
                 NONE = auto()
-            
+
             class State:
                 DEF_SIZE = 102 + (103*self.preamble_len)
                 MSG_SIZE = DEF_SIZE + (103*self.packet_len)
@@ -614,7 +614,7 @@ class WLSK:
                     self.message: WLSK.Message = WLSK.Message()
                 def __str__(self):
                     return f"---FSM---\n\t\tJust Ran: {self.prev_state}\n\t\tNoise: {self.noise_floor}\n\t\tChgSize: {self.chg_win_size}\n\t\tChgStart: {self.chg_start}\n\t\tSync: {self.sync_idx}\n\t\tSync Pass: {self.sync_passed}\n\t\tWindow: {self.window}\n\t\tMessage:{self.message}\n\t\tNext State: {self.state}"
-            
+
             pQueue: pq[WLSK.Bucket] = pq()
             def bucket_gather():
                 while not self.global_stop.is_set():
@@ -638,7 +638,7 @@ class WLSK:
                         FSM.chg_start = FSM.window.start    # i.e. don't change the start
                         # State transition
                         FSM.state = ds.RESIZE
-                        
+
                     # RESIZE - creates windows of various sizes.
                     case ds.RESIZE:
                         FSM.window.resize(size=FSM.chg_win_size,time=FSM.chg_start,offset=self.b_offset)
@@ -656,7 +656,7 @@ class WLSK:
                             FSM.state = ds.DECODE
                         else:
                             self.l.error("WLSK-PFSM: window size failure.")
-                    
+
                     # FIND - Searches for the points that could be the start of a message.
                     case ds.FIND:
                         FSM.sync_idx = None
@@ -671,7 +671,7 @@ class WLSK:
                         else:
                             FSM.chg_start = FSM.sync_idx
                             FSM.state = ds.RESIZE
-                            
+
                     # SYNC - Syncs the window to the start of the message, and checks the preamble.
                     case ds.SYNC:
                         # TODO: add the bit decision logic and how to space the sync window
@@ -684,10 +684,12 @@ class WLSK:
                                 for pkt in packets[time_center - self.b_offset : time_center + self.f_offset]
                                 if pkt == 0
                             )
+                            # print(num_zeros, (self.b_offset + self.f_offset))
                             percent_above = num_zeros / (self.b_offset + self.f_offset) * 100
                             result = percent_above > self.zero_percentage
+                            print(percent_above, result)
                             return result
-                        
+
                         for i in range(self.preamble_len):
                             time_center = FSM.sync_idx + math.ceil(102.4 * i)
                             # print(time_center)
@@ -696,7 +698,7 @@ class WLSK:
                             else:
                                 FSM.message.add_bit(0)
                         FSM.sync_passed = FSM.message.check_vs(self.preamble)
-                        self.l.debug(f"WLSK-MSGF: {FSM.message}")
+                        self.l.debug(f"WLSK-SYNC: {FSM.message}")
                         # State transition
                         FSM.message.clear()
                         if FSM.sync_passed:
@@ -705,7 +707,7 @@ class WLSK:
                         else:
                             FSM.window.seen_idxs.add(FSM.sync_idx)
                             FSM.state = ds.FIND
-                    
+
                     # DECODE - Decodes the message and sends it to the message queue.
                     case ds.DECODE:
                         for i in range(self.preamble_len + self.packet_len):
@@ -716,7 +718,7 @@ class WLSK:
                                 FSM.message.add_bit(0)
                         self.msg_queue.put(copy(FSM.message))
                         FSM.state = ds.CLEAN
-                    
+
                     # CLEAN - empties the window and waits for the next message.
                     case ds.CLEAN:
                         # TODO: add the clean up logic
@@ -724,9 +726,9 @@ class WLSK:
                         FSM.chg_start = FSM.window[-1].t + 1 # move the start to the end of the current window
                         FSM.window.clear()
                         FSM.message.clear()
-                        # State transition                                                    
+                        # State transition
                         FSM.state = ds.RESIZE
-                    
+
                     case _:
                         self.l.error(
                             f"WLSK-PFSM: Reached illegal state!! state: {FSM.state}")
@@ -736,7 +738,7 @@ class WLSK:
             self.l.info("WLSK-PFSM: ending PFSM process")
             return
 
-        
+
         def fetch(self, queue) -> t.Any:
             while not self.global_stop.is_set():
                 try:
@@ -762,19 +764,21 @@ if __name__ == "__main__":
 
     receiver.startReceiver()
     signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, receiver))
-    
+
     msg = receiver.waitUntilMessage()
     #   1, 0, 1, 0, 1, 0, 1, 0, 1, 1
     # 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0
     # 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1
     #                                                                                         ##
-    # compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0, 
-    compare = WLSK.Message(msg=[
-                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
-                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
-                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
-                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
-                        ], forceValid=True)
+    # compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,
+    # compare = WLSK.Message(msg=[
+    #                     1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+    #                     1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
+    #                     1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+    #                     1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
+    #                     ], forceValid=True)
+    #
+    compare = WLSK.Message(msg=[1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0], forceValid=True)
 
     print(f"Original Message : {compare}")
     print(f"Message Received!: {''.join(str(x) for x in msg.message[31:])}")

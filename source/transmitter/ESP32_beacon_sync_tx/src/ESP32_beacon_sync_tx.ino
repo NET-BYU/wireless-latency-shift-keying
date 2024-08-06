@@ -1,4 +1,5 @@
 #include "wifi_func.h"
+#include "hamming.h"
 
 // #define DADDR 0xd8 ,0xec ,0x5e ,0x13 ,0xb2 ,0x15
 #define DADDR 0xbc, 0xa5, 0x11, 0x20, 0x08, 0x3b
@@ -54,10 +55,11 @@ uint8_t txData_9[64] = {1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0};
 
-uint8_t transmitData[64] = {0};
+uint8_t transmitData[64 * 7 / 4] = {0};
 
 void selectTxData(uint8_t idx)
 {
+  std::vector<uint8_t> transmitEncData(64 * 7 / 4, 255); // Encoded data
   switch (idx)
   {
   case 0:
@@ -89,7 +91,24 @@ void selectTxData(uint8_t idx)
     break;
   case 9:
   default:
-    memcpy(transmitData, txData_9, sizeof(transmitData));
+    transmitEncData = encode_msg(txData_9, 64);
+    // Print txData_9
+    Serial.print("txData_9:\t\t");
+    for (int i = 0; i < 64; i++)
+    {
+     Serial.print(txData_9[i]);
+    }
+    Serial.println();
+    //
+    // Print transmitEncData
+    Serial.print("transmitEncData:\t");
+    for (int i = 0; i < transmitEncData.size(); i++)
+    {
+       Serial.print(transmitEncData[i]);
+    }
+    Serial.println();
+    // Copy transmitEncData to transmitData
+    std::copy(transmitEncData.begin(), transmitEncData.end(), transmitData);
     break;
   }
 }
@@ -97,8 +116,9 @@ void selectTxData(uint8_t idx)
 uint8_t transmitDataLen = sizeof(transmitData) / sizeof(transmitData[0]);
 uint8_t barkerOne[1] = {1};
 uint8_t barkerZero[1] = {0};
-uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
-                        0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
+//uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
+//                        0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
+uint8_t preamble[8] = {1,0,1,0,1,0,1,0};
 
 uint8_t barkerOneLen = sizeof(barkerOne) / sizeof(barkerOne[0]);
 uint8_t barkerZeroLen = sizeof(barkerZero) / sizeof(barkerZero[0]);
@@ -148,7 +168,7 @@ void shiftNetworkLatency()
   transmitNullSleep();
   delay(3);
   transmitNullSleep();
-  delay(80);
+  delay(100);
   transmitNullAwake();
   delay(3);
   transmitNullAwake();
@@ -368,7 +388,7 @@ void loop()
     if ((tx_seq_num >= 0) && (tx_seq_num <= 9))
     {
       selectTxData(tx_seq_num);
-      Serial.printf("Sending sequence %d", tx_seq_num);
+      Serial.printf("Sending sequence %d\n", tx_seq_num);
     }
     else
     {

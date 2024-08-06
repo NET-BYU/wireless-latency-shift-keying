@@ -51,7 +51,8 @@ decoder_params:
   #    1,
   #    0,
     ]
-  packet_length: 112
+    #packet_length: 112
+  packet_length: 64
   system:
     back_offset: 101
     front_offset: 2

@@ -678,7 +678,7 @@ class WLSK:
                         def zero_percentage(time_center):
                             packets= [pkt.c for pkt in FSM.window]
                             time_center = time_center - FSM.window[0].t
-                            print(packets)
+                            #print(packets)
                             num_zeros = sum(
                                 1
                                 for pkt in packets[time_center - self.b_offset : time_center + self.f_offset]
@@ -770,14 +770,14 @@ if __name__ == "__main__":
     # 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1
     #                                                                                         ##
     # compare = WLSK.Message(msg=[1,1,1,1,1,0,0,1,1,0,1,0,0,1,0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,
-    # compare = WLSK.Message(msg=[
-    #                     1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
-    #                     1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
-    #                     1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
-    #                     1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
-    #                     ], forceValid=True)
-    #
-    compare = WLSK.Message(msg=[1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0], forceValid=False)
+    compare = WLSK.Message(msg=[
+                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0,
+                        1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
+                        ], forceValid=True)
+    
+    # compare = WLSK.Message(msg=[1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0], forceValid=False)
 
     print(f"Original Message : {compare}")
     print(f"Message Received!: {''.join(str(x) for x in msg.message[31:])}")

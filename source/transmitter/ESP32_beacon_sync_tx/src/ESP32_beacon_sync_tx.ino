@@ -55,7 +55,8 @@ uint8_t txData_9[64] = {1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1,
                         1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0};
 
-uint8_t transmitData[64 * 7 / 4] = {0};
+//uint8_t transmitData[64 * 7 / 4] = {0};
+uint8_t transmitData[64] = {0};
 
 void selectTxData(uint8_t idx)
 {
@@ -108,7 +109,8 @@ void selectTxData(uint8_t idx)
     }
     Serial.println();
     // Copy transmitEncData to transmitData
-    std::copy(transmitEncData.begin(), transmitEncData.end(), transmitData);
+    //std::copy(transmitEncData.begin(), transmitEncData.end(), transmitData);
+    memcpy(transmitData, txData_9, sizeof(transmitData));
     break;
   }
 }

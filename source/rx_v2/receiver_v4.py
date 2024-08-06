@@ -82,7 +82,7 @@ class WLSK:
             return self.message
         def check_vs(self, preamble):
             diff = sum(r != w for r, w in zip(self.message, preamble))
-            return diff < 2
+            return diff < 5
         def clear(self):
             self.timestamp = None
             self.message = []
@@ -678,13 +678,12 @@ class WLSK:
                         def zero_percentage(time_center):
                             packets= [pkt.c for pkt in FSM.window]
                             time_center = time_center - FSM.window[0].t
-                            # print(packets)
+                            print(packets)
                             num_zeros = sum(
                                 1
                                 for pkt in packets[time_center - self.b_offset : time_center + self.f_offset]
                                 if pkt == 0
                             )
-                            # print(num_zeros, (self.b_offset + self.f_offset))
                             percent_above = num_zeros / (self.b_offset + self.f_offset) * 100
                             result = percent_above > self.zero_percentage
                             print(percent_above, result)
@@ -778,7 +777,7 @@ if __name__ == "__main__":
     #                     1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0
     #                     ], forceValid=True)
     #
-    compare = WLSK.Message(msg=[1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0], forceValid=True)
+    compare = WLSK.Message(msg=[1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,1,0,1,1,0,1,0], forceValid=False)
 
     print(f"Original Message : {compare}")
     print(f"Message Received!: {''.join(str(x) for x in msg.message[31:])}")

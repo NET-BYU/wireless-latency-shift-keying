@@ -116,9 +116,9 @@ void selectTxData(uint8_t idx)
 uint8_t transmitDataLen = sizeof(transmitData) / sizeof(transmitData[0]);
 uint8_t barkerOne[1] = {1};
 uint8_t barkerZero[1] = {0};
-//uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
-//                        0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
-uint8_t preamble[8] = {1,0,1,0,1,0,1,0};
+uint8_t preamble[31] = {1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0,
+                        0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0};
+//uint8_t preamble[8] = {1,0,1,0,1,0,1,0};
 
 uint8_t barkerOneLen = sizeof(barkerOne) / sizeof(barkerOne[0]);
 uint8_t barkerZeroLen = sizeof(barkerZero) / sizeof(barkerZero[0]);
